@@ -4,13 +4,13 @@
   "description": "Live browser plugin for AI coding agents. Connect to your running Firefox session via WebDriver BiDi.",
   "author": "Mert Koseoglu",
   "license": "AGPL-3.0",
-  "homepage": "https://github.com/mksglu/browsir.ai#readme",
+  "homepage": "https://github.com/KilimcininKorOglu/foxbrowser#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/mksglu/browsir.ai.git"
+    "url": "git+https://github.com/KilimcininKorOglu/foxbrowser.git"
   },
   "bugs": {
-    "url": "https://github.com/mksglu/browsir.ai/issues"
+    "url": "https://github.com/KilimcininKorOglu/foxbrowser/issues"
   },
   "type": "module",
   "bin": {
