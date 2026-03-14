@@ -38,7 +38,13 @@ export async function browserInspectSource(
   if (params.ref) {
     const match = REF_PATTERN.exec(params.ref);
     if (!match) throw new Error(`Invalid ref format: ${params.ref}`);
-    resolveExpr = `document.querySelector('[data-bidi-ref="${params.ref}"]')`;
+    const nodeId = match[1];
+    resolveExpr = `(function() {
+      var walker = document.createTreeWalker(document.body, NodeFilter.SHOW_ELEMENT);
+      var count = 0; var node = walker.currentNode;
+      while (node) { count++; if (count === ${nodeId}) return node; node = walker.nextNode(); if (!node) break; }
+      return null;
+    })()`;
   } else if (params.selector) {
     resolveExpr = `document.querySelector(${JSON.stringify(params.selector)})`;
   } else {
