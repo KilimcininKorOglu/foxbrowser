@@ -68,6 +68,7 @@ export class BiDiManager {
 
   private _activeContextId: string | null = null;
   private connectOptions: ConnectOptions | null = null;
+  private boundMessageHandler: ((event: MessageEvent) => void) | null = null;
 
   /** The currently active browsing context ID, or null. */
   get activeContextId(): string | null {
@@ -139,6 +140,13 @@ export class BiDiManager {
   }
 
   private openWebSocket(url: string): void {
+    if (this.ws) {
+      if (this.boundMessageHandler) {
+        this.ws.removeEventListener("message", this.boundMessageHandler);
+      }
+      try { this.ws.close(); } catch { /* ignore */ }
+    }
+
     const ws = new WebSocket(url);
     this.ws = ws;
     this.setupMessageHandler();
@@ -174,7 +182,7 @@ export class BiDiManager {
   private setupMessageHandler(): void {
     if (!this.ws) return;
 
-    this.ws.addEventListener("message", (event: MessageEvent) => {
+    this.boundMessageHandler = (event: MessageEvent) => {
       const data =
         typeof event.data === "string" ? event.data : String(event.data);
       let msg: BiDiMessage;
@@ -201,7 +209,8 @@ export class BiDiManager {
       if (msg.method) {
         this.handleEvent(msg.method, msg.params ?? {});
       }
-    });
+    };
+    this.ws.addEventListener("message", this.boundMessageHandler);
   }
 
   private handleEvent(
