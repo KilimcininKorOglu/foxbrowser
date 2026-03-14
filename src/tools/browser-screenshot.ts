@@ -42,7 +42,7 @@ async function getElementBox(
   let jsExpression: string;
 
   if (isRef) {
-    const match = /^@e(\d+)$/.exec(selectorOrRef);
+    const match = /^@?e(\d+)$/.exec(selectorOrRef);
     if (!match) throw new Error(`Invalid ref format: ${selectorOrRef}`);
     const nodeId = match[1];
     jsExpression = `(() => {

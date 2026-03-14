@@ -32,7 +32,7 @@ export interface ClickResult {
   success: boolean;
 }
 
-const REF_PATTERN = /^@e(\d+)$/;
+const REF_PATTERN = /^@?e(\d+)$/;
 
 // ---------------------------------------------------------------------------
 // Element resolution

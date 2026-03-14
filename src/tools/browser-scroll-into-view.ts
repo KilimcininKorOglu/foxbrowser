@@ -19,7 +19,7 @@ export async function browserScrollIntoView(
   let jsExpression: string;
 
   if (params.ref) {
-    const match = /^@e(\d+)$/.exec(params.ref);
+    const match = /^@?e(\d+)$/.exec(params.ref);
     if (!match) throw new Error(`Invalid ref format: ${params.ref}`);
     const nodeId = match[1];
     jsExpression = `(() => {

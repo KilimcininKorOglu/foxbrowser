@@ -23,7 +23,7 @@ export async function browserFocus(
       resultOwnership: "none",
     });
   } else if (params.ref) {
-    const match = params.ref.match(/@e(\d+)/);
+    const match = params.ref.match(/^@?e(\d+)$/);
     if (!match) throw new Error(`Invalid ref format: ${params.ref}`);
     const nodeId = match[1];
     await bidi.send("script.evaluate", {

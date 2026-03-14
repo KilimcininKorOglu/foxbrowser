@@ -16,7 +16,7 @@ export interface FileUploadResult {
   error?: string;
 }
 
-const REF_PATTERN = /^@e(\d+)$/;
+const REF_PATTERN = /^@?e(\d+)$/;
 
 export async function browserFileUpload(
   bidi: BiDiConnection,

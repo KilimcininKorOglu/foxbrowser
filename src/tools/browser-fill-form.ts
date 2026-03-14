@@ -33,7 +33,7 @@ export interface FillFormResult {
 
 function resolveElementScript(field: FillFormField): string {
   if (field.ref) {
-    const match = field.ref.match(/@?e(\d+)/);
+    const match = field.ref.match(/^@?e(\d+)$/);
     if (!match) throw new Error(`Invalid ref format: ${field.ref}`);
     const nodeId = match[1];
     return `(() => {

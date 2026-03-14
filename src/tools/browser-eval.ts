@@ -146,7 +146,7 @@ async function evalWithRef(
   functionDeclaration: string,
   ref: string,
 ): Promise<EvalResult> {
-  const match = /^@e(\d+)$/.exec(ref);
+  const match = /^@?e(\d+)$/.exec(ref);
   if (!match) {
     return { error: `Invalid ref format: ${ref}` };
   }
