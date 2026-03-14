@@ -4,7 +4,7 @@
  * Uses navigator.clipboard.readText() and navigator.clipboard.writeText()
  * to interact with the clipboard.
  */
-import type { CDPConnection } from "../cdp/connection.js";
+import type { BiDiConnection } from "../bidi/connection.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -33,27 +33,24 @@ export interface ClipboardWriteParams {
  * @returns The clipboard text content
  */
 export async function browserClipboardRead(
-  cdp: CDPConnection,
+  bidi: BiDiConnection,
 ): Promise<ClipboardReadResult> {
-  const response = (await cdp.send("Runtime.evaluate", {
+  const response = (await bidi.send("script.evaluate", {
     expression: "navigator.clipboard.readText()",
     awaitPromise: true,
-    returnByValue: true,
+    resultOwnership: "none",
   })) as { result: { type: string; value: unknown } };
 
-  return { text: (response.result.value as string) ?? "" };
+  return { text: (response.result?.value as string) ?? "" };
 }
 
 /**
  * Writes text content to the system clipboard.
  *
- * Uses `navigator.clipboard.writeText()` via Runtime.evaluate.
- *
- * @param cdp - CDP connection
- * @param params - The text to write
+ * Uses `navigator.clipboard.writeText()` via script.evaluate.
  */
 export async function browserClipboardWrite(
-  cdp: CDPConnection,
+  bidi: BiDiConnection,
   params: ClipboardWriteParams,
 ): Promise<void> {
   const escaped = params.text
@@ -62,9 +59,9 @@ export async function browserClipboardWrite(
     .replace(/\n/g, "\\n")
     .replace(/\r/g, "\\r");
 
-  await cdp.send("Runtime.evaluate", {
+  await bidi.send("script.evaluate", {
     expression: `navigator.clipboard.writeText('${escaped}')`,
     awaitPromise: true,
-    returnByValue: true,
+    resultOwnership: "none",
   });
 }

@@ -8,7 +8,7 @@
  *
  * @module browser-html
  */
-import type { CDPConnection } from "../cdp/connection";
+import type { BiDiConnection } from "../bidi/connection.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -53,44 +53,39 @@ interface MarkdownResult {
  * @returns The HTML string, or an error if the element is not found.
  */
 export async function browserHtml(
-  cdp: CDPConnection,
+  bidi: BiDiConnection,
   params: HtmlParams,
 ): Promise<HtmlResult> {
-  // No selector: return full page HTML
   if (!params.selector) {
-    const evalResult = (await cdp.send("Runtime.evaluate", {
+    const evalResult = (await bidi.send("script.evaluate", {
       expression: "document.documentElement.outerHTML",
-      returnByValue: true,
+      awaitPromise: false,
+      resultOwnership: "none",
     })) as {
       result: { type: string; value: string };
     };
 
-    return { html: evalResult.result.value };
+    return { html: evalResult.result?.value ?? "" };
   }
 
-  // With selector: use DOM methods
-  const doc = (await cdp.send("DOM.getDocument", {})) as {
-    root: { nodeId: number };
-  };
+  const queryResult = (await bidi.send("script.callFunction", {
+    functionDeclaration: `(sel) => {
+      const el = document.querySelector(sel);
+      return el ? el.outerHTML : null;
+    }`,
+    arguments: [{ type: "string", value: params.selector }],
+    awaitPromise: false,
+    resultOwnership: "none",
+  })) as { result: { type: string; value: string | null } };
 
-  const queryResult = (await cdp.send("DOM.querySelector", {
-    nodeId: doc.root.nodeId,
-    selector: params.selector,
-  })) as { nodeId: number };
-
-  // nodeId 0 means element not found
-  if (!queryResult.nodeId) {
+  if (!queryResult.result?.value) {
     return {
       html: "",
       error: `Element not found: ${params.selector}`,
     };
   }
 
-  const outerResult = (await cdp.send("DOM.getOuterHTML", {
-    nodeId: queryResult.nodeId,
-  })) as { outerHTML: string };
-
-  return { html: outerResult.outerHTML };
+  return { html: queryResult.result.value };
 }
 
 // ---------------------------------------------------------------------------
@@ -255,18 +250,18 @@ function decodeHtmlEntities(text: string): string {
  * @returns Markdown string.
  */
 export async function extractContentAsMarkdown(
-  cdp: CDPConnection,
+  bidi: BiDiConnection,
   params: MarkdownParams,
 ): Promise<MarkdownResult> {
-  // Get the HTML content
-  const evalResult = (await cdp.send("Runtime.evaluate", {
+  const evalResult = (await bidi.send("script.evaluate", {
     expression: "document.documentElement.outerHTML",
-    returnByValue: true,
+    awaitPromise: false,
+    resultOwnership: "none",
   })) as {
     result: { type: string; value: string };
   };
 
-  const html = evalResult.result.value;
+  const html = evalResult.result?.value ?? "";
   const markdown = htmlToMarkdown(html);
 
   return { markdown };

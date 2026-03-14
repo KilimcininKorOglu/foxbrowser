@@ -4,42 +4,46 @@
  * Provides functions to extract text, values, attributes, counts,
  * bounding boxes, and computed styles from page elements.
  */
-import type { CDPConnection } from "../cdp/connection";
+import type { BiDiConnection } from "../bidi/connection.js";
 
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
 
-interface ResolvedNode {
-  objectId: string;
-}
-
 /**
- * Resolves a backend node ID to a Runtime object ID for use with
- * `Runtime.callFunctionOn`.
+ * Calls a function on a resolved element by walking the DOM tree
+ * to find the element by its index (backendNodeId equivalent).
  */
-async function resolveNode(cdp: CDPConnection, backendNodeId: number): Promise<ResolvedNode> {
-  const result = (await cdp.send("DOM.resolveNode", { backendNodeId })) as {
-    object: { objectId: string };
-  };
-  return { objectId: result.object.objectId };
-}
-
-/**
- * Calls a function on a resolved node and returns the raw CDP result.
- */
-async function callOnNode(
-  cdp: CDPConnection,
-  objectId: string,
+async function callOnNodeById(
+  bidi: BiDiConnection,
+  backendNodeId: number,
   functionDeclaration: string,
-  returnByValue = true,
 ): Promise<{ type: string; subtype?: string; value: unknown }> {
-  const response = (await cdp.send("Runtime.callFunctionOn", {
-    objectId,
-    functionDeclaration,
-    returnByValue,
+  const response = (await bidi.send("script.callFunction", {
+    functionDeclaration: `(id, fn) => {
+      const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_ELEMENT);
+      let count = 0;
+      let node = walker.currentNode;
+      while (node) {
+        count++;
+        if (count === id) {
+          const f = new Function('return (' + fn + ').call(this)');
+          return f.call(node);
+        }
+        node = walker.nextNode();
+        if (!node) break;
+      }
+      return null;
+    }`,
+    arguments: [
+      { type: "number", value: backendNodeId },
+      { type: "string", value: functionDeclaration },
+    ],
+    awaitPromise: false,
+    resultOwnership: "none",
+    serializationOptions: { maxDomDepth: 0 },
   })) as { result: { type: string; subtype?: string; value: unknown } };
-  return response.result;
+  return response.result ?? { type: "null", value: null };
 }
 
 // ---------------------------------------------------------------------------
@@ -74,13 +78,12 @@ interface StylesParams extends RefParams {
  * to extract the element's `textContent` property.
  */
 export async function browserGetText(
-  cdp: CDPConnection,
+  bidi: BiDiConnection,
   params: RefParams,
 ): Promise<{ text: string }> {
-  const { objectId } = await resolveNode(cdp, params.backendNodeId);
-  const result = await callOnNode(
-    cdp,
-    objectId,
+  const result = await callOnNodeById(
+    bidi,
+    params.backendNodeId,
     "function() { return this.textContent || ''; }",
   );
   return { text: (result.value as string) ?? "" };
@@ -92,13 +95,12 @@ export async function browserGetText(
  * For non-form elements, returns an empty string.
  */
 export async function browserGetValue(
-  cdp: CDPConnection,
+  bidi: BiDiConnection,
   params: RefParams,
 ): Promise<{ value: string }> {
-  const { objectId } = await resolveNode(cdp, params.backendNodeId);
-  const result = await callOnNode(
-    cdp,
-    objectId,
+  const result = await callOnNodeById(
+    bidi,
+    params.backendNodeId,
     "function() { return this.value !== undefined ? this.value : ''; }",
   );
   return { value: (result.value as string) ?? "" };
@@ -110,17 +112,16 @@ export async function browserGetValue(
  * Returns `null` if the attribute does not exist.
  */
 export async function browserGetAttribute(
-  cdp: CDPConnection,
+  bidi: BiDiConnection,
   params: AttributeParams,
 ): Promise<{ value: string | null }> {
-  const { objectId } = await resolveNode(cdp, params.backendNodeId);
-  const result = await callOnNode(
-    cdp,
-    objectId,
+  const result = await callOnNodeById(
+    bidi,
+    params.backendNodeId,
     `function() { return this.getAttribute(${JSON.stringify(params.attribute)}); }`,
   );
 
-  if (result.subtype === "null" || result.value === null) {
+  if (result.type === "null" || result.value === null) {
     return { value: null };
   }
   return { value: result.value as string };
@@ -132,14 +133,15 @@ export async function browserGetAttribute(
  * Uses `Runtime.evaluate` with `document.querySelectorAll(selector).length`.
  */
 export async function browserGetCount(
-  cdp: CDPConnection,
+  bidi: BiDiConnection,
   params: CountParams,
 ): Promise<{ count: number }> {
-  const response = (await cdp.send("Runtime.evaluate", {
+  const response = (await bidi.send("script.evaluate", {
     expression: `document.querySelectorAll(${JSON.stringify(params.selector)}).length`,
-    returnByValue: true,
+    awaitPromise: false,
+    resultOwnership: "none",
   })) as { result: { type: string; value: number } };
-  return { count: response.result.value };
+  return { count: response.result?.value ?? 0 };
 }
 
 /**
@@ -149,13 +151,12 @@ export async function browserGetCount(
  * (e.g., `display: none`).
  */
 export async function browserGetBox(
-  cdp: CDPConnection,
+  bidi: BiDiConnection,
   params: RefParams,
 ): Promise<{ box: { x: number; y: number; width: number; height: number } | null }> {
-  const { objectId } = await resolveNode(cdp, params.backendNodeId);
-  const result = await callOnNode(
-    cdp,
-    objectId,
+  const result = await callOnNodeById(
+    bidi,
+    params.backendNodeId,
     `function() {
       var rect = this.getBoundingClientRect();
       if (!rect || (rect.width === 0 && rect.height === 0)) return null;
@@ -163,7 +164,7 @@ export async function browserGetBox(
     }`,
   );
 
-  if (result.subtype === "null" || result.value === null) {
+  if (result.type === "null" || result.value === null) {
     return { box: null };
   }
   return { box: result.value as { x: number; y: number; width: number; height: number } };
@@ -176,23 +177,21 @@ export async function browserGetBox(
  * CSS property. Otherwise, returns a full computed styles object.
  */
 export async function browserGetStyles(
-  cdp: CDPConnection,
+  bidi: BiDiConnection,
   params: StylesParams,
 ): Promise<{ styles: Record<string, string> | string }> {
-  const { objectId } = await resolveNode(cdp, params.backendNodeId);
-
   if (params.property) {
-    const result = await callOnNode(
-      cdp,
-      objectId,
+    const result = await callOnNodeById(
+      bidi,
+      params.backendNodeId,
       `function() { return window.getComputedStyle(this).getPropertyValue(${JSON.stringify(params.property)}); }`,
     );
     return { styles: result.value as string };
   }
 
-  const result = await callOnNode(
-    cdp,
-    objectId,
+  const result = await callOnNodeById(
+    bidi,
+    params.backendNodeId,
     `function() {
       var cs = window.getComputedStyle(this);
       var obj = {};

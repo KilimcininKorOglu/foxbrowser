@@ -1,9 +1,9 @@
 /**
- * browser_eval tool — evaluates JavaScript expressions in the browser via CDP.
+ * browser_eval tool — evaluates JavaScript expressions in the browser via BiDi.
  *
  * Supports:
- *  - Simple expression evaluation (Runtime.evaluate)
- *  - Element-scoped evaluation via @eN refs (Runtime.callFunctionOn)
+ *  - Simple expression evaluation (script.evaluate)
+ *  - Element-scoped evaluation via @eN refs (script.callFunction)
  *  - Async expressions with awaitPromise
  *  - Error handling (ReferenceError, TypeError, etc.)
  *  - DOM node serialization to string description
@@ -13,7 +13,7 @@
  *
  * @module browser-eval
  */
-import type { CDPConnection } from "../cdp/connection";
+import type { BiDiConnection } from "../bidi/connection.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -38,82 +38,50 @@ interface EvalResult {
 }
 
 // ---------------------------------------------------------------------------
-// CDP result parsing
+// BiDi result parsing
 // ---------------------------------------------------------------------------
 
-interface CDPRemoteObject {
+interface BiDiRemoteValue {
   type: string;
-  subtype?: string;
-  className?: string;
-  description?: string;
   value?: unknown;
-  objectId?: string;
+  sharedId?: string;
+  handle?: string;
 }
 
-interface CDPExceptionDetails {
-  exceptionId: number;
+interface BiDiExceptionDetails {
   text: string;
-  lineNumber: number;
-  columnNumber: number;
-  exception?: {
-    type: string;
-    subtype?: string;
-    className?: string;
-    description?: string;
-  };
+  columnNumber?: number;
+  lineNumber?: number;
+  stackTrace?: { callFrames: unknown[] };
 }
 
 /**
- * Parse a CDP RemoteObject into a JavaScript value.
- *
- * Handles:
- *  - Primitives (string, number, boolean)
- *  - null (subtype "null")
- *  - undefined (type "undefined")
- *  - DOM nodes (subtype "node") → serialized to string description
- *  - Objects → return the value directly
+ * Parse a BiDi RemoteValue into a JavaScript value.
  */
-function parseRemoteObject(obj: CDPRemoteObject): unknown {
-  // undefined
+function parseRemoteValue(obj: BiDiRemoteValue): unknown {
   if (obj.type === "undefined") {
     return undefined;
   }
 
-  // null
-  if (obj.type === "object" && obj.subtype === "null") {
+  if (obj.type === "null") {
     return null;
   }
 
-  // DOM node
-  if (obj.type === "object" && obj.subtype === "node") {
-    return obj.description ?? `[${obj.className ?? "Node"}]`;
+  if (obj.type === "node") {
+    return `[Node sharedId=${obj.sharedId}]`;
   }
 
-  // Primitives and objects with value
   if (obj.value !== undefined) {
     return obj.value;
-  }
-
-  // Object without value (shouldn't happen with returnByValue: true)
-  if (obj.description) {
-    return obj.description;
   }
 
   return undefined;
 }
 
 /**
- * Extract error message from CDP exception details.
+ * Extract error message from BiDi exception details.
  */
-function formatException(details: CDPExceptionDetails): string {
-  if (details.exception?.description) {
-    return details.exception.description;
-  }
-
-  if (details.exception?.className) {
-    return `${details.exception.className}: ${details.text}`;
-  }
-
+function formatException(details: BiDiExceptionDetails): string {
   return details.text;
 }
 
@@ -124,107 +92,118 @@ function formatException(details: CDPExceptionDetails): string {
 /**
  * Evaluate a JavaScript expression in the browser context.
  *
- * Without a ref, uses `Runtime.evaluate` for global scope evaluation.
- * With a ref (@eN), uses `DOM.resolveNode` + `Runtime.callFunctionOn`
- * for element-scoped evaluation.
- *
- * @param cdp - CDP connection.
- * @param params - Expression and optional ref/flags.
- * @returns Evaluation result or error.
+ * Without a ref, uses `script.evaluate` for global scope evaluation.
+ * With a ref (@eN), uses `script.callFunction` for element-scoped evaluation.
  */
 export async function browserEval(
-  cdp: CDPConnection,
+  bidi: BiDiConnection,
   params: EvalParams,
 ): Promise<EvalResult> {
   let expression = params.expression;
 
-  // Decode base64-encoded expression
   if (params.base64) {
     expression = atob(expression);
   }
 
-  // Element-scoped evaluation via @eN ref
   if (params.ref) {
-    return evalWithRef(cdp, expression, params.ref);
+    return evalWithRef(bidi, expression, params.ref);
   }
 
-  // Global scope evaluation
-  return evalGlobal(cdp, expression);
+  return evalGlobal(bidi, expression);
 }
 
-/**
- * Evaluate an expression in the global scope via Runtime.evaluate.
- */
 async function evalGlobal(
-  cdp: CDPConnection,
+  bidi: BiDiConnection,
   expression: string,
 ): Promise<EvalResult> {
-  const response = (await cdp.send("Runtime.evaluate", {
-    expression,
-    returnByValue: true,
-    awaitPromise: true,
-  })) as {
-    result: CDPRemoteObject;
-    exceptionDetails?: CDPExceptionDetails;
-  };
-
-  // Check for exceptions
-  if (response.exceptionDetails) {
-    return {
-      error: formatException(response.exceptionDetails),
+  try {
+    const response = (await bidi.send("script.evaluate", {
+      expression,
+      awaitPromise: true,
+      resultOwnership: "root",
+      serializationOptions: { maxDomDepth: 0 },
+    })) as {
+      type?: string;
+      result?: BiDiRemoteValue;
+      exceptionDetails?: BiDiExceptionDetails;
     };
+
+    if (response.type === "exception" || response.exceptionDetails) {
+      return {
+        error: formatException(response.exceptionDetails ?? { text: "Unknown error" }),
+      };
+    }
+
+    const value = response.result ? parseRemoteValue(response.result) : undefined;
+    return { result: value };
+  } catch (e: unknown) {
+    return { error: (e as Error).message };
   }
-
-  const value = parseRemoteObject(response.result);
-
-  return { result: value };
 }
 
-/**
- * Evaluate a function on a specific element via Runtime.callFunctionOn.
- *
- * Resolves the @eN ref to a backendNodeId, then resolves to a remote object,
- * and calls the function on it.
- */
 async function evalWithRef(
-  cdp: CDPConnection,
+  bidi: BiDiConnection,
   functionDeclaration: string,
   ref: string,
 ): Promise<EvalResult> {
-  // Parse the @eN ref
   const match = /^@e(\d+)$/.exec(ref);
   if (!match) {
     return { error: `Invalid ref format: ${ref}` };
   }
 
-  const backendNodeId = parseInt(match[1], 10);
+  const backendNodeId = match[1];
 
-  // Resolve backendNodeId to a remote object
-  const resolved = (await cdp.send("DOM.resolveNode", {
-    backendNodeId,
-  })) as { object: { objectId: string } };
+  try {
+    // Resolve element by walking the DOM tree
+    const resolveResponse = (await bidi.send("script.callFunction", {
+      functionDeclaration: `(id) => {
+        const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_ELEMENT);
+        let count = 0;
+        let node = walker.currentNode;
+        const targetId = parseInt(id, 10);
+        while (node) {
+          count++;
+          if (count === targetId) return node;
+          node = walker.nextNode();
+          if (!node) break;
+        }
+        return null;
+      }`,
+      arguments: [{ type: "string", value: backendNodeId }],
+      awaitPromise: false,
+      resultOwnership: "root",
+    })) as { result?: BiDiRemoteValue };
 
-  const objectId = resolved.object.objectId;
+    if (!resolveResponse.result || resolveResponse.result.type === "null") {
+      return { error: `Element not found for ref: ${ref}` };
+    }
 
-  // Call the function on the element
-  const response = (await cdp.send("Runtime.callFunctionOn", {
-    objectId,
-    functionDeclaration,
-    returnByValue: true,
-    awaitPromise: true,
-  })) as {
-    result: CDPRemoteObject;
-    exceptionDetails?: CDPExceptionDetails;
-  };
-
-  // Check for exceptions
-  if (response.exceptionDetails) {
-    return {
-      error: formatException(response.exceptionDetails),
+    const elementArg = {
+      type: "node" as const,
+      sharedId: resolveResponse.result.sharedId,
     };
+
+    const response = (await bidi.send("script.callFunction", {
+      functionDeclaration,
+      arguments: [elementArg],
+      awaitPromise: true,
+      resultOwnership: "root",
+      serializationOptions: { maxDomDepth: 0 },
+    })) as {
+      type?: string;
+      result?: BiDiRemoteValue;
+      exceptionDetails?: BiDiExceptionDetails;
+    };
+
+    if (response.type === "exception" || response.exceptionDetails) {
+      return {
+        error: formatException(response.exceptionDetails ?? { text: "Unknown error" }),
+      };
+    }
+
+    const value = response.result ? parseRemoteValue(response.result) : undefined;
+    return { result: value };
+  } catch (e: unknown) {
+    return { error: (e as Error).message };
   }
-
-  const value = parseRemoteObject(response.result);
-
-  return { result: value };
 }

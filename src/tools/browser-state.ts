@@ -4,41 +4,42 @@
  * Provides functions to check visibility, enabled state, and
  * checked state of DOM elements.
  */
-import type { CDPConnection } from "../cdp/connection";
+import type { BiDiConnection } from "../bidi/connection.js";
 
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
 
-interface ResolvedNode {
-  objectId: string;
-}
-
-/**
- * Resolves a backend node ID to a Runtime object ID for use with
- * `Runtime.callFunctionOn`.
- */
-async function resolveNode(cdp: CDPConnection, backendNodeId: number): Promise<ResolvedNode> {
-  const result = (await cdp.send("DOM.resolveNode", { backendNodeId })) as {
-    object: { objectId: string };
-  };
-  return { objectId: result.object.objectId };
-}
-
-/**
- * Calls a function on a resolved node and returns the raw CDP result.
- */
-async function callOnNode(
-  cdp: CDPConnection,
-  objectId: string,
+async function callOnNodeById(
+  bidi: BiDiConnection,
+  backendNodeId: number,
   functionDeclaration: string,
 ): Promise<{ type: string; value: unknown }> {
-  const response = (await cdp.send("Runtime.callFunctionOn", {
-    objectId,
-    functionDeclaration,
-    returnByValue: true,
+  const response = (await bidi.send("script.callFunction", {
+    functionDeclaration: `(id, fn) => {
+      const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_ELEMENT);
+      let count = 0;
+      let node = walker.currentNode;
+      while (node) {
+        count++;
+        if (count === id) {
+          const f = new Function('return (' + fn + ').call(this)');
+          return f.call(node);
+        }
+        node = walker.nextNode();
+        if (!node) break;
+      }
+      return null;
+    }`,
+    arguments: [
+      { type: "number", value: backendNodeId },
+      { type: "string", value: functionDeclaration },
+    ],
+    awaitPromise: false,
+    resultOwnership: "none",
+    serializationOptions: { maxDomDepth: 0 },
   })) as { result: { type: string; value: unknown } };
-  return response.result;
+  return response.result ?? { type: "null", value: null };
 }
 
 // ---------------------------------------------------------------------------
@@ -65,13 +66,12 @@ interface RefParams {
  * - Element has zero width and height
  */
 export async function browserIsVisible(
-  cdp: CDPConnection,
+  bidi: BiDiConnection,
   params: RefParams,
 ): Promise<{ visible: boolean }> {
-  const { objectId } = await resolveNode(cdp, params.backendNodeId);
-  const result = await callOnNode(
-    cdp,
-    objectId,
+  const result = await callOnNodeById(
+    bidi,
+    params.backendNodeId,
     `function() {
       var style = window.getComputedStyle(this);
       if (style.display === 'none') return false;
@@ -96,13 +96,12 @@ export async function browserIsVisible(
  * `disabled` property. Non-form elements are always considered enabled.
  */
 export async function browserIsEnabled(
-  cdp: CDPConnection,
+  bidi: BiDiConnection,
   params: RefParams,
 ): Promise<{ enabled: boolean }> {
-  const { objectId } = await resolveNode(cdp, params.backendNodeId);
-  const result = await callOnNode(
-    cdp,
-    objectId,
+  const result = await callOnNodeById(
+    bidi,
+    params.backendNodeId,
     `function() {
       if ('disabled' in this) return !this.disabled;
       return true;
@@ -117,13 +116,12 @@ export async function browserIsEnabled(
  * Returns the value of the `checked` property on the element.
  */
 export async function browserIsChecked(
-  cdp: CDPConnection,
+  bidi: BiDiConnection,
   params: RefParams,
 ): Promise<{ checked: boolean }> {
-  const { objectId } = await resolveNode(cdp, params.backendNodeId);
-  const result = await callOnNode(
-    cdp,
-    objectId,
+  const result = await callOnNodeById(
+    bidi,
+    params.backendNodeId,
     "function() { return !!this.checked; }",
   );
   return { checked: result.value as boolean };
