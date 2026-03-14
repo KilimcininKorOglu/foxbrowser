@@ -1619,7 +1619,7 @@ describe("Config (src/config.ts)", () => {
   // ----- Default values -----
 
   it("DEFAULT_CONFIG has port 9222", () => {
-    expect(DEFAULT_CONFIG.chrome.port).toBe(9222);
+    expect(DEFAULT_CONFIG.firefox.port).toBe(9222);
   });
 
   it("DEFAULT_CONFIG has commandTimeout 30000", () => {
@@ -1627,11 +1627,11 @@ describe("Config (src/config.ts)", () => {
   });
 
   it("DEFAULT_CONFIG has host 127.0.0.1", () => {
-    expect(DEFAULT_CONFIG.chrome.host).toBe("127.0.0.1");
+    expect(DEFAULT_CONFIG.firefox.host).toBe("127.0.0.1");
   });
 
   it("DEFAULT_CONFIG has autoLaunch disabled", () => {
-    expect(DEFAULT_CONFIG.chrome.autoLaunch).toBe(false);
+    expect(DEFAULT_CONFIG.firefox.autoLaunch).toBe(false);
   });
 
   it("DEFAULT_CONFIG has screenshot quality 80", () => {
@@ -1720,14 +1720,14 @@ describe("Config (src/config.ts)", () => {
     vi.resetModules();
     const mod = await import("../src/config");
     const config = mod.loadConfig();
-    expect(config.chrome.port).toBe(9222);
-    expect(config.chrome.host).toBe("127.0.0.1");
+    expect(config.firefox.port).toBe(9222);
+    expect(config.firefox.host).toBe("127.0.0.1");
     expect(config.connection.commandTimeout).toBe(30000);
   });
 
   it("merges user config with defaults (partial override)", async () => {
     const userConfig = JSON.stringify({
-      chrome: { port: 9333 },
+      firefox: { port: 9333 },
     });
 
     vi.doMock("node:fs", async (importOriginal) => {
@@ -1755,17 +1755,17 @@ describe("Config (src/config.ts)", () => {
     const config = mod.loadConfig();
 
     // Overridden value
-    expect(config.chrome.port).toBe(9333);
+    expect(config.firefox.port).toBe(9333);
     // Default values preserved (deep merge)
-    expect(config.chrome.host).toBe("127.0.0.1");
-    expect(config.chrome.autoLaunch).toBe(false);
+    expect(config.firefox.host).toBe("127.0.0.1");
+    expect(config.firefox.autoLaunch).toBe(false);
     expect(config.connection.commandTimeout).toBe(30000);
     expect(config.screenshot.quality).toBe(80);
   });
 
   it("deep merges nested user config with defaults", async () => {
     const userConfig = JSON.stringify({
-      chrome: { port: 9333, host: "192.168.1.100" },
+      firefox: { port: 9333, host: "192.168.1.100" },
       connection: { commandTimeout: 60000 },
     });
 
@@ -1794,11 +1794,11 @@ describe("Config (src/config.ts)", () => {
     const config = mod.loadConfig();
 
     // Overridden values
-    expect(config.chrome.port).toBe(9333);
-    expect(config.chrome.host).toBe("192.168.1.100");
+    expect(config.firefox.port).toBe(9333);
+    expect(config.firefox.host).toBe("192.168.1.100");
     expect(config.connection.commandTimeout).toBe(60000);
     // Non-overridden values preserved
-    expect(config.chrome.autoLaunch).toBe(false);
+    expect(config.firefox.autoLaunch).toBe(false);
     expect(config.connection.connectTimeout).toBe(5000);
     expect(config.connection.reconnectAttempts).toBe(3);
     expect(config.screenshot.quality).toBe(80);
@@ -1838,8 +1838,8 @@ describe("Config (src/config.ts)", () => {
     const config = mod.loadConfig();
 
     // Should fall back to defaults
-    expect(config.chrome.port).toBe(9222);
-    expect(config.chrome.host).toBe("127.0.0.1");
+    expect(config.firefox.port).toBe(9222);
+    expect(config.firefox.host).toBe("127.0.0.1");
     expect(config.connection.commandTimeout).toBe(30000);
 
     // Should have warned about the malformed config
@@ -1865,7 +1865,7 @@ describe("Config (src/config.ts)", () => {
   it("validates config with Zod (rejects invalid types)", async () => {
     // Config with wrong types should be caught by Zod validation
     const invalidConfig = JSON.stringify({
-      chrome: { port: "not-a-number", host: 12345 },
+      firefox: { port: "not-a-number", host: 12345 },
     });
 
     vi.doMock("node:fs", async (importOriginal) => {
@@ -1898,8 +1898,8 @@ describe("Config (src/config.ts)", () => {
     const config = mod.loadConfig();
 
     // Should fall back to defaults when Zod validation fails
-    expect(config.chrome.port).toBe(9222);
-    expect(config.chrome.host).toBe("127.0.0.1");
+    expect(config.firefox.port).toBe(9222);
+    expect(config.firefox.host).toBe("127.0.0.1");
 
     warnSpy.mockRestore();
     errorSpy.mockRestore();
@@ -1910,7 +1910,7 @@ describe("Config (src/config.ts)", () => {
   it("BROWSIR_CONFIG env var overrides config file path", async () => {
     const customPath = "/tmp/custom-browsirai-config.json";
     const customConfig = JSON.stringify({
-      chrome: { port: 9444 },
+      firefox: { port: 9444 },
     });
 
     const originalEnv = process.env.BROWSIR_CONFIG;
@@ -1939,7 +1939,7 @@ describe("Config (src/config.ts)", () => {
     const mod = await import("../src/config");
     const config = mod.loadConfig();
 
-    expect(config.chrome.port).toBe(9444);
+    expect(config.firefox.port).toBe(9444);
 
     // Restore env
     if (originalEnv === undefined) {
@@ -1971,7 +1971,7 @@ describe("Config (src/config.ts)", () => {
     const mod = await import("../src/config");
     const config = mod.loadConfig();
 
-    expect(config.chrome.port).toBe(9555);
+    expect(config.firefox.port).toBe(9555);
 
     // Restore env
     if (originalEnv === undefined) {
@@ -1986,7 +1986,7 @@ describe("Config (src/config.ts)", () => {
     process.env.CHROME_DEBUG_PORT = "9666";
 
     const userConfig = JSON.stringify({
-      chrome: { port: 9333 },
+      firefox: { port: 9333 },
     });
 
     vi.doMock("node:fs", async (importOriginal) => {
@@ -2014,7 +2014,7 @@ describe("Config (src/config.ts)", () => {
     const config = mod.loadConfig();
 
     // Env var should take precedence over config file
-    expect(config.chrome.port).toBe(9666);
+    expect(config.firefox.port).toBe(9666);
 
     // Restore env
     if (originalEnv === undefined) {
@@ -2133,6 +2133,10 @@ describe("Platform Detection (src/adapters/detect.ts)", () => {
     const envVarsToRemove = [
       "CLAUDE_PROJECT_DIR",
       "CURSOR_TRACE_ID",
+      "VSCODE_PID",
+      "TERM_PROGRAM",
+      "GEMINI_CLI",
+      "OPENCODE_CONFIG",
     ];
 
     for (const key of envVarsToRemove) {
@@ -2161,6 +2165,10 @@ describe("Platform Detection (src/adapters/detect.ts)", () => {
     const envVarsToRemove = [
       "CLAUDE_PROJECT_DIR",
       "CURSOR_TRACE_ID",
+      "VSCODE_PID",
+      "TERM_PROGRAM",
+      "GEMINI_CLI",
+      "OPENCODE_CONFIG",
     ];
 
     for (const key of envVarsToRemove) {
