@@ -1,352 +1,100 @@
 /**
- * browser_find — Semantic element locators via CDP Accessibility and Runtime APIs.
+ * browser_find — Semantic element locators via BiDi script.evaluate.
  *
- * Provides Playwright-style locator functions: findByRole, findByText, findByLabel,
- * findByPlaceholder, findByAlt, findByTitle, findByTestId, findFirst, findLast, findNth.
- *
- * Also provides a unified `browserFind` function for the MCP tool that finds elements
- * by ARIA role, accessible name, or text content and returns @eN refs.
- *
- * Role and text-based locators use the Accessibility tree (Accessibility.getFullAXTree).
- * Attribute-based locators use Runtime.evaluate with CSS selectors.
- * Positional locators (first/last/nth) use querySelectorAll.
+ * Since BiDi has no Accessibility domain, we use JS-based DOM traversal
+ * with ARIA attributes and element roles to simulate accessibility tree queries.
  */
-import type { CDPConnection } from "../cdp/connection.js";
-
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
+import type { BiDiConnection } from "../bidi/connection.js";
 
 export interface FindResult {
-  /** Whether an element was found. */
   found: boolean;
-  /** The backend node ID of the found element. */
   backendNodeId?: number;
-  /** The index of the found element (for positional locators). */
   index?: number;
 }
 
-export interface FindByRoleParams {
-  /** ARIA role to search for (e.g., "button", "link"). */
-  role: string;
-  /** Accessible name to match. */
-  name?: string;
-}
+export interface FindByRoleParams { role: string; name?: string; }
+export interface FindByTextParams { text: string; exact?: boolean; }
+export interface FindByLabelParams { label: string; }
+export interface FindByPlaceholderParams { placeholder: string; }
+export interface FindByAltParams { alt: string; }
+export interface FindByTitleParams { title: string; }
+export interface FindByTestIdParams { testId: string; }
+export interface FindPositionalParams { selector: string; }
+export interface FindNthParams extends FindPositionalParams { n: number; }
 
-export interface FindByTextParams {
-  /** Text content to search for. */
-  text: string;
-  /** If true, require exact text match (not substring). */
-  exact?: boolean;
-}
+async function evalFind(bidi: BiDiConnection, expression: string): Promise<FindResult> {
+  const response = (await bidi.send("script.evaluate", {
+    expression,
+    awaitPromise: false,
+    resultOwnership: "none",
+  })) as { result: { type: string; value?: unknown } };
 
-export interface FindByLabelParams {
-  /** Label text to search for. */
-  label: string;
-}
-
-export interface FindByPlaceholderParams {
-  /** Placeholder text to search for. */
-  placeholder: string;
-}
-
-export interface FindByAltParams {
-  /** Alt text to search for. */
-  alt: string;
-}
-
-export interface FindByTitleParams {
-  /** Title attribute to search for. */
-  title: string;
-}
-
-export interface FindByTestIdParams {
-  /** data-testid value to search for. */
-  testId: string;
-}
-
-export interface FindPositionalParams {
-  /** CSS selector to match elements. */
-  selector: string;
-}
-
-export interface FindNthParams extends FindPositionalParams {
-  /** Zero-based index of the element to select. */
-  n: number;
-}
-
-// ---------------------------------------------------------------------------
-// Accessibility tree types
-// ---------------------------------------------------------------------------
-
-interface AXNode {
-  nodeId: string;
-  role: { type: string; value: string };
-  name?: { type: string; value: string };
-  backendDOMNodeId?: number;
-}
-
-// ---------------------------------------------------------------------------
-// Exported functions
-// ---------------------------------------------------------------------------
-
-/**
- * Finds an element by ARIA role and optional accessible name.
- *
- * Uses Accessibility.getFullAXTree and filters by role/name.
- */
-export async function findByRole(
-  cdp: CDPConnection,
-  params: FindByRoleParams,
-): Promise<FindResult> {
-  const response = (await cdp.send("Accessibility.getFullAXTree")) as {
-    nodes: AXNode[];
-  };
-
-  const match = response.nodes.find((node) => {
-    if (node.role.value !== params.role) return false;
-    if (params.name && node.name?.value !== params.name) return false;
-    return true;
-  });
-
-  if (!match) {
+  if (response.result?.type === "null" || !response.result?.value) {
     return { found: false };
   }
-
-  return {
-    found: true,
-    backendNodeId: match.backendDOMNodeId,
-  };
+  return { found: true };
 }
 
-/**
- * Finds an element by its text content.
- *
- * Uses Accessibility.getFullAXTree and filters by accessible name.
- */
-export async function findByText(
-  cdp: CDPConnection,
-  params: FindByTextParams,
-): Promise<FindResult> {
-  const response = (await cdp.send("Accessibility.getFullAXTree")) as {
-    nodes: AXNode[];
-  };
-
-  const match = response.nodes.find((node) => {
-    if (!node.name?.value) return false;
-    if (params.exact) {
-      return node.name.value === params.text;
+export async function findByRole(bidi: BiDiConnection, params: FindByRoleParams): Promise<FindResult> {
+  const nameCheck = params.name ? ` && (el.getAttribute('aria-label') === ${JSON.stringify(params.name)} || el.textContent?.trim() === ${JSON.stringify(params.name)})` : "";
+  return evalFind(bidi, `(() => {
+    const role = ${JSON.stringify(params.role)};
+    const implicit = { a: 'link', button: 'button', input: 'textbox', select: 'combobox', textarea: 'textbox', h1: 'heading', h2: 'heading', h3: 'heading', h4: 'heading', h5: 'heading', h6: 'heading', img: 'img', nav: 'navigation', form: 'form', table: 'table', ul: 'list', ol: 'list', li: 'listitem' };
+    const els = document.querySelectorAll('*');
+    for (const el of els) {
+      const elRole = el.getAttribute('role') || implicit[el.tagName.toLowerCase()] || '';
+      if (elRole === role${nameCheck}) return el;
     }
-    return node.name.value.includes(params.text);
-  });
-
-  if (!match) {
-    return { found: false };
-  }
-
-  return {
-    found: true,
-    backendNodeId: match.backendDOMNodeId,
-  };
+    return null;
+  })()`);
 }
 
-/**
- * Finds an element by its associated label text.
- *
- * Uses Runtime.evaluate to find an element via label association.
- */
-export async function findByLabel(
-  cdp: CDPConnection,
-  params: FindByLabelParams,
-): Promise<FindResult> {
-  const escaped = JSON.stringify(params.label);
+export async function findByText(bidi: BiDiConnection, params: FindByTextParams): Promise<FindResult> {
+  const text = JSON.stringify(params.text);
+  const check = params.exact ? `el.textContent?.trim() === ${text}` : `el.textContent?.includes(${text})`;
+  return evalFind(bidi, `(() => { for (const el of document.querySelectorAll('*')) { if (${check}) return el; } return null; })()`);
+}
 
-  const response = (await cdp.send("Runtime.evaluate", {
-    expression: `(() => {
-      const labels = document.querySelectorAll('label');
-      for (const label of labels) {
-        if (label.textContent?.trim() === ${escaped}) {
-          if (label.htmlFor) {
-            return document.getElementById(label.htmlFor);
-          }
-          return label.querySelector('input, select, textarea');
-        }
+export async function findByLabel(bidi: BiDiConnection, params: FindByLabelParams): Promise<FindResult> {
+  return evalFind(bidi, `(() => {
+    for (const label of document.querySelectorAll('label')) {
+      if (label.textContent?.trim() === ${JSON.stringify(params.label)}) {
+        if (label.htmlFor) return document.getElementById(label.htmlFor);
+        return label.querySelector('input, select, textarea');
       }
-      return null;
-    })()`,
-    returnByValue: false,
-  })) as { result: { type: string; objectId?: string } };
-
-  if (!response.result.objectId) {
-    return { found: false };
-  }
-
-  return { found: true };
+    }
+    return null;
+  })()`);
 }
 
-/**
- * Finds an element by its placeholder attribute.
- *
- * Uses Runtime.evaluate with an attribute selector.
- */
-export async function findByPlaceholder(
-  cdp: CDPConnection,
-  params: FindByPlaceholderParams,
-): Promise<FindResult> {
-  const escaped = JSON.stringify(params.placeholder);
-
-  const response = (await cdp.send("Runtime.evaluate", {
-    expression: `document.querySelector('[placeholder=${escaped}]')`,
-    returnByValue: false,
-  })) as { result: { type: string; objectId?: string } };
-
-  if (!response.result.objectId) {
-    return { found: false };
-  }
-
-  return { found: true };
+export async function findByPlaceholder(bidi: BiDiConnection, params: FindByPlaceholderParams): Promise<FindResult> {
+  return evalFind(bidi, `document.querySelector('[placeholder=${JSON.stringify(params.placeholder)}]')`);
 }
 
-/**
- * Finds an element by its alt text attribute.
- *
- * Uses Runtime.evaluate with an attribute selector.
- */
-export async function findByAlt(
-  cdp: CDPConnection,
-  params: FindByAltParams,
-): Promise<FindResult> {
-  const escaped = JSON.stringify(params.alt);
-
-  const response = (await cdp.send("Runtime.evaluate", {
-    expression: `document.querySelector('[alt=${escaped}]')`,
-    returnByValue: false,
-  })) as { result: { type: string; objectId?: string } };
-
-  if (!response.result.objectId) {
-    return { found: false };
-  }
-
-  return { found: true };
+export async function findByAlt(bidi: BiDiConnection, params: FindByAltParams): Promise<FindResult> {
+  return evalFind(bidi, `document.querySelector('[alt=${JSON.stringify(params.alt)}]')`);
 }
 
-/**
- * Finds an element by its title attribute.
- *
- * Uses Runtime.evaluate with an attribute selector.
- */
-export async function findByTitle(
-  cdp: CDPConnection,
-  params: FindByTitleParams,
-): Promise<FindResult> {
-  const escaped = JSON.stringify(params.title);
-
-  const response = (await cdp.send("Runtime.evaluate", {
-    expression: `document.querySelector('[title=${escaped}]')`,
-    returnByValue: false,
-  })) as { result: { type: string; objectId?: string } };
-
-  if (!response.result.objectId) {
-    return { found: false };
-  }
-
-  return { found: true };
+export async function findByTitle(bidi: BiDiConnection, params: FindByTitleParams): Promise<FindResult> {
+  return evalFind(bidi, `document.querySelector('[title=${JSON.stringify(params.title)}]')`);
 }
 
-/**
- * Finds an element by its data-testid attribute.
- *
- * Uses Runtime.evaluate with a data attribute selector.
- */
-export async function findByTestId(
-  cdp: CDPConnection,
-  params: FindByTestIdParams,
-): Promise<FindResult> {
-  const escaped = JSON.stringify(params.testId);
-
-  const response = (await cdp.send("Runtime.evaluate", {
-    expression: `document.querySelector('[data-testid=${escaped}]')`,
-    returnByValue: false,
-  })) as { result: { type: string; objectId?: string } };
-
-  if (!response.result.objectId) {
-    return { found: false };
-  }
-
-  return { found: true };
+export async function findByTestId(bidi: BiDiConnection, params: FindByTestIdParams): Promise<FindResult> {
+  return evalFind(bidi, `document.querySelector('[data-testid=${JSON.stringify(params.testId)}]')`);
 }
 
-/**
- * Finds the first element matching a CSS selector.
- *
- * @returns FindResult with index=0
- */
-export async function findFirst(
-  cdp: CDPConnection,
-  params: FindPositionalParams,
-): Promise<FindResult> {
-  const escaped = JSON.stringify(params.selector);
-
-  const response = (await cdp.send("Runtime.evaluate", {
-    expression: `document.querySelectorAll(${escaped})[0]`,
-    returnByValue: false,
-  })) as { result: { type: string; objectId?: string } };
-
-  if (!response.result.objectId) {
-    return { found: false };
-  }
-
-  return { found: true, index: 0 };
+export async function findFirst(bidi: BiDiConnection, params: FindPositionalParams): Promise<FindResult> {
+  const r = await evalFind(bidi, `document.querySelectorAll(${JSON.stringify(params.selector)})[0]`);
+  return r.found ? { ...r, index: 0 } : r;
 }
 
-/**
- * Finds the last element matching a CSS selector.
- *
- * @returns FindResult with the last element's index
- */
-export async function findLast(
-  cdp: CDPConnection,
-  params: FindPositionalParams,
-): Promise<FindResult> {
-  const escaped = JSON.stringify(params.selector);
-
-  const response = (await cdp.send("Runtime.evaluate", {
-    expression: `(() => {
-      const els = document.querySelectorAll(${escaped});
-      return els.length > 0 ? els[els.length - 1] : null;
-    })()`,
-    returnByValue: false,
-  })) as { result: { type: string; objectId?: string } };
-
-  if (!response.result.objectId) {
-    return { found: false };
-  }
-
-  return { found: true };
+export async function findLast(bidi: BiDiConnection, params: FindPositionalParams): Promise<FindResult> {
+  return evalFind(bidi, `(() => { const els = document.querySelectorAll(${JSON.stringify(params.selector)}); return els.length > 0 ? els[els.length - 1] : null; })()`);
 }
 
-/**
- * Finds the nth element matching a CSS selector.
- *
- * @param params.n - Zero-based index
- * @returns FindResult with the nth element
- */
-export async function findNth(
-  cdp: CDPConnection,
-  params: FindNthParams,
-): Promise<FindResult> {
-  const escaped = JSON.stringify(params.selector);
-
-  const response = (await cdp.send("Runtime.evaluate", {
-    expression: `document.querySelectorAll(${escaped})[${params.n}]`,
-    returnByValue: false,
-  })) as { result: { type: string; objectId?: string } };
-
-  if (!response.result.objectId) {
-    return { found: false };
-  }
-
-  return { found: true, index: params.n };
+export async function findNth(bidi: BiDiConnection, params: FindNthParams): Promise<FindResult> {
+  const r = await evalFind(bidi, `document.querySelectorAll(${JSON.stringify(params.selector)})[${params.n}]`);
+  return r.found ? { ...r, index: params.n } : r;
 }
 
 // ---------------------------------------------------------------------------
@@ -354,99 +102,71 @@ export async function findNth(
 // ---------------------------------------------------------------------------
 
 export interface BrowserFindParams {
-  /** ARIA role to search for (e.g., "button", "link", "heading", "textbox"). */
   role?: string;
-  /** Accessible name to match (substring, case-sensitive). */
   name?: string;
-  /** Text content to search for (substring match on accessible name). */
   text?: string;
-  /** Zero-based index to pick the nth match (default 0 = first). */
   nth?: number;
 }
 
 export interface BrowserFindResult {
-  /** Whether a matching element was found. */
   found: boolean;
-  /** @eN ref for use with other browsirai tools, or null if not found. */
   ref: string | null;
-  /** ARIA role of the matched element, or null if not found. */
   role: string | null;
-  /** Accessible name of the matched element, or null if not found. */
   name: string | null;
-  /** Total number of matching elements. */
   count: number;
 }
 
-/**
- * Finds elements by ARIA role, accessible name, or text content.
- *
- * Uses Accessibility.getFullAXTree to walk the AX tree, filters by
- * role (case-insensitive) and/or name (substring) and/or text content,
- * and returns the nth match (default first) with an @eN ref.
- */
 export async function browserFind(
-  cdp: CDPConnection,
+  bidi: BiDiConnection,
   params: BrowserFindParams,
 ): Promise<BrowserFindResult> {
   const nth = params.nth ?? 0;
 
-  // Get the full accessibility tree
-  const response = (await cdp.send("Accessibility.getFullAXTree", undefined, {
-    timeout: 10000,
-  })) as {
-    nodes: AXNode[];
-  };
+  // JS-based accessibility tree traversal
+  const response = (await bidi.send("script.evaluate", {
+    expression: `(() => {
+      const implicit = { a:'link', button:'button', input:'textbox', select:'combobox', textarea:'textbox', h1:'heading', h2:'heading', h3:'heading', h4:'heading', h5:'heading', h6:'heading', img:'img', nav:'navigation', form:'form', table:'table', ul:'list', ol:'list', li:'listitem' };
+      const role = ${JSON.stringify(params.role ?? "")};
+      const nameFilter = ${JSON.stringify(params.name ?? "")};
+      const textFilter = ${JSON.stringify(params.text ?? "")};
+      const matches = [];
+      let counter = 0;
 
-  // Filter nodes by role, name, and/or text
-  const matches = response.nodes.filter((node) => {
-    // Filter by role (case-insensitive)
-    if (params.role) {
-      const nodeRole = node.role?.value ?? "";
-      if (nodeRole.toLowerCase() !== params.role.toLowerCase()) {
-        return false;
+      const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_ELEMENT);
+      let node = walker.currentNode;
+      while (node) {
+        counter++;
+        const elRole = node.getAttribute && (node.getAttribute('role') || implicit[node.tagName?.toLowerCase()] || '');
+        const elName = node.getAttribute && (node.getAttribute('aria-label') || node.textContent?.trim()?.slice(0, 100) || '');
+
+        let match = true;
+        if (role && elRole?.toLowerCase() !== role.toLowerCase()) match = false;
+        if (nameFilter && !elName?.includes(nameFilter)) match = false;
+        if (textFilter && !elName?.includes(textFilter)) match = false;
+
+        if (match) {
+          matches.push({ ref: '@e' + counter, role: elRole, name: elName?.slice(0, 50) });
+        }
+        node = walker.nextNode();
+        if (!node) break;
       }
-    }
+      return { matches, count: matches.length };
+    })()`,
+    awaitPromise: false,
+    resultOwnership: "none",
+  })) as { result: { value?: { matches: Array<{ ref: string; role: string; name: string }>; count: number } } };
 
-    // Filter by name (substring match)
-    if (params.name) {
-      const nodeName = node.name?.value ?? "";
-      if (!nodeName.includes(params.name)) {
-        return false;
-      }
-    }
-
-    // Filter by text content (substring match on accessible name)
-    if (params.text) {
-      const nodeName = node.name?.value ?? "";
-      if (!nodeName.includes(params.text)) {
-        return false;
-      }
-    }
-
-    return true;
-  });
-
-  const count = matches.length;
-
-  // Pick the nth match
-  if (nth >= count || count === 0) {
-    return {
-      found: false,
-      ref: null,
-      role: null,
-      name: null,
-      count,
-    };
+  const data = response.result?.value;
+  if (!data || data.count === 0 || nth >= data.count) {
+    return { found: false, ref: null, role: null, name: null, count: data?.count ?? 0 };
   }
 
-  const match = matches[nth];
-  const ref = match.backendDOMNodeId ? `@e${match.backendDOMNodeId}` : null;
-
+  const match = data.matches[nth]!;
   return {
     found: true,
-    ref,
-    role: match.role?.value ?? null,
-    name: match.name?.value ?? null,
-    count,
+    ref: match.ref,
+    role: match.role,
+    name: match.name,
+    count: data.count,
   };
 }
