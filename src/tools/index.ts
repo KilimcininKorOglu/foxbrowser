@@ -8,7 +8,7 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { BiDiConnection } from "../bidi/connection.js";
-import { connectFirefox, launchHeadlessFirefox } from "../firefox-launcher.js";
+import { connectFirefox, launchHeadlessFirefox, quitFirefox } from "../firefox-launcher.js";
 
 // Tool implementations
 import { browserNavigate } from "./browser-navigate.js";
@@ -909,7 +909,13 @@ function createHandlers(): Record<string, ToolHandler> {
     browser_close: async (args) => {
       try {
         const conn = await getBiDi();
-        const result = await browserClose(conn, args as any);
+        const typed = args as { closeAll?: boolean; targetId?: string; force?: boolean };
+        const result = await browserClose(conn, typed);
+        if (typed.closeAll) {
+          bidiConnection?.close();
+          bidiConnection = null;
+          await quitFirefox();
+        }
         return textResult(`Closed ${result.closedTargets} tab(s)`);
       } catch (e: any) {
         return errorResult(e.message);

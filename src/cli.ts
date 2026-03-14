@@ -1,9 +1,14 @@
 import { VERSION } from "./version.js";
+import { quitFirefox } from "./firefox-launcher.js";
 
 // Prevent unhandled rejections from crashing the MCP server
 // (e.g. CDP reconnection failures when Chrome is closed)
 process.on("unhandledRejection", () => {});
 process.on("uncaughtException", () => {});
+
+// Clean up browsirai-launched Firefox on process exit
+process.on("SIGINT", () => { quitFirefox().finally(() => process.exit(0)); });
+process.on("SIGTERM", () => { quitFirefox().finally(() => process.exit(0)); });
 
 /**
  * CLI dispatcher for the `browsirai` command.
