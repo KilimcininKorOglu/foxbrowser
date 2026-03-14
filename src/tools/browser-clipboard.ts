@@ -53,14 +53,8 @@ export async function browserClipboardWrite(
   bidi: BiDiConnection,
   params: ClipboardWriteParams,
 ): Promise<void> {
-  const escaped = params.text
-    .replace(/\\/g, "\\\\")
-    .replace(/'/g, "\\'")
-    .replace(/\n/g, "\\n")
-    .replace(/\r/g, "\\r");
-
   await bidi.send("script.evaluate", {
-    expression: `navigator.clipboard.writeText('${escaped}')`,
+    expression: `navigator.clipboard.writeText(${JSON.stringify(params.text)})`,
     awaitPromise: true,
     resultOwnership: "none",
   });
