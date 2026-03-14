@@ -1,5 +1,5 @@
 /**
- * Runs browsirai diagnostics — checks environment, browser availability, and CDP connectivity.
+ * Runs foxbrowser diagnostics — checks environment, browser availability, and CDP connectivity.
  */
 
 import { execSync } from "node:child_process";
@@ -76,7 +76,7 @@ function resolvePath(p: string): string {
 }
 
 /**
- * Check if browsirai is configured in a specific config file.
+ * Check if foxbrowser is configured in a specific config file.
  */
 function checkConfigFile(
   filePath: string,
@@ -90,11 +90,11 @@ function checkConfigFile(
     const content = readFileSync(resolved, "utf-8");
     const parsed = JSON.parse(content) as Record<string, Record<string, unknown>>;
     const servers = parsed[configKey];
-    if (servers && typeof servers === "object" && "browsirai" in servers) {
+    if (servers && typeof servers === "object" && "foxbrowser" in servers) {
       return {
         ok: true,
         label: "Platform config",
-        message: `browsirai found in ${resolved} (platform: ${platform})`,
+        message: `foxbrowser found in ${resolved} (platform: ${platform})`,
       };
     }
     return null;
@@ -104,7 +104,7 @@ function checkConfigFile(
 }
 
 /**
- * Checks if browsirai is configured in any known platform config file.
+ * Checks if foxbrowser is configured in any known platform config file.
  * First checks the detected platform, then scans all known paths.
  */
 function checkPlatformConfig(): DiagnosticResult {
@@ -133,12 +133,12 @@ function checkPlatformConfig(): DiagnosticResult {
   return {
     ok: false,
     label: "Platform config",
-    message: `browsirai not found in any known config file (detected: ${detection.platform})`,
+    message: `foxbrowser not found in any known config file (detected: ${detection.platform})`,
   };
 }
 
 /**
- * Runs all browsirai diagnostics and returns an array of check results.
+ * Runs all foxbrowser diagnostics and returns an array of check results.
  *
  * Checks performed:
  * 1. Chrome/Chromium installation
@@ -149,11 +149,11 @@ function checkPlatformConfig(): DiagnosticResult {
 export async function runDoctor(): Promise<DiagnosticResult[]> {
   const checks: DiagnosticResult[] = [];
 
-  // 0. browsirai version + install info
+  // 0. foxbrowser version + install info
   const method = getInstallMethod();
   checks.push({
     ok: true,
-    label: "browsirai version",
+    label: "foxbrowser version",
     message: `v${VERSION} (${method})`,
   });
 
@@ -216,7 +216,7 @@ export async function runDoctor(): Promise<DiagnosticResult[]> {
   checks.push(checkPlatformConfig());
 
   // Log results
-  console.log("browsirai doctor: running diagnostics...\n");
+  console.log("foxbrowser doctor: running diagnostics...\n");
   for (const check of checks) {
     const icon = check.ok ? "PASS" : "FAIL";
     console.log(`  [${icon}] ${check.label}`);

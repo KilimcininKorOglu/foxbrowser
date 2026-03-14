@@ -1,5 +1,5 @@
 /**
- * Adapter type definitions for browsirai platform integration.
+ * Adapter type definitions for foxbrowser platform integration.
  *
  * These types define the contract for platform-specific install adapters
  * and shared diagnostic/install result structures.

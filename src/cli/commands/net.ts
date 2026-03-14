@@ -26,7 +26,7 @@ import { browserDiff } from "../../tools/browser-diff.js";
 const routeCommand: CLICommand = {
   name: "route",
   description: "Intercept matching requests with a custom response",
-  usage: "browsirai route <urlPattern> [--status=200] [--body=\"...\"] [--contentType=application/json]",
+  usage: "foxbrowser route <urlPattern> [--status=200] [--body=\"...\"] [--contentType=application/json]",
   run: async (cdp, args) => {
     const flags = parseFlags(args);
     const urlPattern = flags._0;
@@ -62,7 +62,7 @@ const routeCommand: CLICommand = {
 const abortCommand: CLICommand = {
   name: "abort",
   description: "Block matching requests",
-  usage: "browsirai abort <urlPattern>",
+  usage: "foxbrowser abort <urlPattern>",
   run: async (cdp, args) => {
     const flags = parseFlags(args);
     const urlPattern = flags._0;
@@ -89,7 +89,7 @@ const abortCommand: CLICommand = {
 const unrouteCommand: CLICommand = {
   name: "unroute",
   description: "Remove intercept rules",
-  usage: "browsirai unroute [urlPattern] [--all]",
+  usage: "foxbrowser unroute [urlPattern] [--all]",
   run: async (cdp, args) => {
     const flags = parseFlags(args);
     const urlPattern = flags._0;
@@ -123,7 +123,7 @@ const unrouteCommand: CLICommand = {
 const saveCommand: CLICommand = {
   name: "save",
   description: "Save browser session state (cookies, storage)",
-  usage: "browsirai save <name>",
+  usage: "foxbrowser save <name>",
   run: async (cdp, args) => {
     const flags = parseFlags(args);
     const name = flags._0;
@@ -151,7 +151,7 @@ const saveCommand: CLICommand = {
 const loadCommand: CLICommand = {
   name: "load",
   description: "Load a saved browser session state",
-  usage: "browsirai load <name> [--url=https://...]",
+  usage: "foxbrowser load <name> [--url=https://...]",
   run: async (cdp, args) => {
     const flags = parseFlags(args);
     const name = flags._0;
@@ -181,7 +181,7 @@ const loadCommand: CLICommand = {
 const diffCommand: CLICommand = {
   name: "diff",
   description: "Pixel-by-pixel screenshot comparison",
-  usage: "browsirai diff [--selector=...] [--threshold=30] [--output=diff.png]",
+  usage: "foxbrowser diff [--selector=...] [--threshold=30] [--output=diff.png]",
   run: async (cdp, args) => {
     const flags = parseFlags(args);
     const selector = flags.selector;

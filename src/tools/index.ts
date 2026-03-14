@@ -46,7 +46,7 @@ import { browserSaveState, browserLoadState } from "./browser-session-state.js";
 
 let bidiConnection: BiDiConnection | null = null;
 
-let headlessMode = process.env.BROWSIR_HEADLESS === "1" || process.env.BROWSIR_HEADLESS === "true";
+let headlessMode = process.env.FOXBROWSER_HEADLESS === "1" || process.env.FOXBROWSER_HEADLESS === "true";
 
 function attachLifecycleListeners(conn: BiDiConnection): void {
   const resetState = () => {
@@ -94,7 +94,7 @@ async function getBiDi(): Promise<BiDiConnection> {
 
   if (!connection.success) {
     throw new Error(
-      connection.error ?? "Cannot connect to Firefox. Run `browsirai doctor` to set up."
+      connection.error ?? "Cannot connect to Firefox. Run `foxbrowser doctor` to set up."
     );
   }
 
@@ -157,7 +157,7 @@ function errorResult(msg: string) {
 
 const SKILL_SUMMARY = `Connected to Firefox via WebDriver BiDi.
 
-## browsirai — Quick Reference
+## foxbrowser — Quick Reference
 
 **Cost hierarchy (cheapest first):**
 1. \`browser_evaluate\` — JS expression for single values (~10 tokens). Use when you need one data point (count, text, attribute).
@@ -221,7 +221,7 @@ const toolHints: Record<string, string> = {
   browser_unroute: "\n\n→ Tip: Use {all: true} to clear all intercepts at once.",
   browser_find: "\n\n→ Next: Use the @eN ref with browser_click, browser_fill_form, browser_hover, or browser_inspect_source.",
   browser_diff: "\n\n→ Tip: Use 'current' as before value to capture the page now. Make changes, then call again with the first result as before.",
-  browser_save_state: "\n\n→ Tip: State saved to ~/.browsirai/states/. Use browser_load_state to restore later.",
+  browser_save_state: "\n\n→ Tip: State saved to ~/.foxbrowser/states/. Use browser_load_state to restore later.",
   browser_load_state: "\n\n→ Next: browser_snapshot to see the restored page state.",
   browser_connect: "", // SKILL_SUMMARY is returned directly
   browser_list: "\n\n→ Tip: Use browser_connect to connect to a specific instance.",
@@ -778,7 +778,7 @@ function createHandlers(): Record<string, ToolHandler> {
           const { getUpgradeStatus } = await import("../upgrade.js");
           const status = getUpgradeStatus();
           if (status && status.latest !== status.current) {
-            summary += `\n\n⚠️ browsirai v${status.latest} available (current: v${status.current}). Restart to apply.`;
+            summary += `\n\n⚠️ foxbrowser v${status.latest} available (current: v${status.current}). Restart to apply.`;
           }
         } catch { /* ignore */ }
 

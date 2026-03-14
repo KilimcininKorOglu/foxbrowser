@@ -164,9 +164,9 @@ export function isFirefoxRunning(): boolean {
 }
 
 /**
- * Quits the browsirai-launched Firefox process. Only kills the process
+ * Quits the foxbrowser-launched Firefox process. Only kills the process
  * that was spawned by launchFirefoxWithDebugging or launchHeadlessFirefox.
- * Does nothing if no Firefox was launched by browsirai.
+ * Does nothing if no Firefox was launched by foxbrowser.
  */
 export async function quitFirefox(): Promise<void> {
   if (launchedPid === undefined) {
@@ -279,7 +279,7 @@ export async function launchFirefoxWithDebugging(port = 9222, headless = false):
   const targetPort = usesSeparateInstance ? SEPARATE_PORT : port;
 
   const profileDir = usesSeparateInstance
-    ? join(tmpdir(), "browsirai-firefox")
+    ? join(tmpdir(), "foxbrowser-firefox")
     : undefined;
 
   if (profileDir) {
@@ -343,7 +343,7 @@ export async function launchHeadlessFirefox(): Promise<LaunchResult> {
     return { success: false, port: HEADLESS_PORT, error: "Firefox not found." };
   }
 
-  const profileDir = join(tmpdir(), "browsirai-firefox-headless");
+  const profileDir = join(tmpdir(), "foxbrowser-firefox-headless");
   mkdirSync(profileDir, { recursive: true });
 
   const child = spawn(firefoxPath, [

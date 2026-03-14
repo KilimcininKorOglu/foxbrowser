@@ -1,5 +1,5 @@
 /**
- * Navigation & lifecycle CLI commands for browsirai.
+ * Navigation & lifecycle CLI commands for foxbrowser.
  *
  * Commands: navigate, back, scroll, wait, tabs, close, resize
  *
@@ -25,13 +25,13 @@ const navigate: CLICommand = {
   name: "navigate",
   aliases: ["open", "goto"],
   description: "Navigate the browser to a URL",
-  usage: "browsirai open <url> [--waitUntil=load]",
+  usage: "foxbrowser open <url> [--waitUntil=load]",
   async run(cdp, args) {
     const flags = parseFlags(args);
     const url = flags._0 ?? flags.url;
 
     if (!url) {
-      console.error("Usage: browsirai open <url> [--waitUntil=load]");
+      console.error("Usage: foxbrowser open <url> [--waitUntil=load]");
       console.error("  Provide a URL as the first argument or via --url=...");
       process.exit(1);
     }
@@ -64,7 +64,7 @@ const navigate: CLICommand = {
 const back: CLICommand = {
   name: "back",
   description: "Navigate back or forward in browser history",
-  usage: "browsirai back [--direction=back]",
+  usage: "foxbrowser back [--direction=back]",
   async run(cdp, args) {
     const flags = parseFlags(args);
     const direction = (flags._0 ?? flags.direction ?? "back") as "back" | "forward";
@@ -97,7 +97,7 @@ const back: CLICommand = {
 const scroll: CLICommand = {
   name: "scroll",
   description: "Scroll the page in a direction",
-  usage: "browsirai scroll <direction> [--pixels=300] [--selector=...]",
+  usage: "foxbrowser scroll <direction> [--pixels=300] [--selector=...]",
   async run(cdp, args) {
     const flags = parseFlags(args);
     const direction = (flags._0 ?? flags.direction ?? "down") as
@@ -130,7 +130,7 @@ const scroll: CLICommand = {
 const wait: CLICommand = {
   name: "wait",
   description: "Wait for a condition on the page",
-  usage: "browsirai wait [--text=...] [--selector=...] [--url=...] [--fn=...] [--time=N] [--timeout=30]",
+  usage: "foxbrowser wait [--text=...] [--selector=...] [--url=...] [--fn=...] [--time=N] [--timeout=30]",
   async run(cdp, args) {
     const flags = parseFlags(args);
     const timeout = flags.timeout ? Number(flags.timeout) : undefined;
@@ -156,7 +156,7 @@ const wait: CLICommand = {
     }
 
     if (!hasCondition && !flags._0) {
-      console.error("Usage: browsirai wait [--text=...] [--selector=...] [--url=...] [--fn=...] [--time=N]");
+      console.error("Usage: foxbrowser wait [--text=...] [--selector=...] [--url=...] [--fn=...] [--time=N]");
       console.error("  Provide at least one condition to wait for.");
       process.exit(1);
     }
@@ -180,7 +180,7 @@ const tabs: CLICommand = {
   name: "tab",
   aliases: ["tabs"],
   description: "List open browser tabs",
-  usage: "browsirai tab [--filter=*github*]",
+  usage: "foxbrowser tab [--filter=*github*]",
   async run(cdp, args) {
     const flags = parseFlags(args);
     const filter = flags._0 ?? flags.filter;
@@ -210,7 +210,7 @@ const tabs: CLICommand = {
 const close: CLICommand = {
   name: "close",
   description: "Close browser tab(s)",
-  usage: "browsirai close [--force] [--targetId=...] [--closeAll]",
+  usage: "foxbrowser close [--force] [--targetId=...] [--closeAll]",
   async run(cdp, args) {
     const flags = parseFlags(args);
 
@@ -240,7 +240,7 @@ const close: CLICommand = {
 const resize: CLICommand = {
   name: "resize",
   description: "Resize the browser viewport",
-  usage: "browsirai resize <width> <height> [--preset=mobile]",
+  usage: "foxbrowser resize <width> <height> [--preset=mobile]",
   async run(cdp, args) {
     const flags = parseFlags(args);
     const preset = flags.preset;
@@ -253,7 +253,7 @@ const resize: CLICommand = {
       : undefined;
 
     if (!preset && width === undefined) {
-      console.error("Usage: browsirai resize <width> <height> [--preset=mobile]");
+      console.error("Usage: foxbrowser resize <width> <height> [--preset=mobile]");
       console.error("  Provide dimensions or a preset (mobile, tablet, desktop, fullhd, reset).");
       process.exit(1);
     }

@@ -6,12 +6,12 @@ import { quitFirefox } from "./firefox-launcher.js";
 process.on("unhandledRejection", () => {});
 process.on("uncaughtException", () => {});
 
-// Clean up browsirai-launched Firefox on process exit
+// Clean up foxbrowser-launched Firefox on process exit
 process.on("SIGINT", () => { quitFirefox().finally(() => process.exit(0)); });
 process.on("SIGTERM", () => { quitFirefox().finally(() => process.exit(0)); });
 
 /**
- * CLI dispatcher for the `browsirai` command.
+ * CLI dispatcher for the `foxbrowser` command.
  *
  * Uses dynamic imports so that modules can be mocked in tests via `vi.doMock`.
  */

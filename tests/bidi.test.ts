@@ -98,7 +98,7 @@ describe("Firefox launcher", () => {
   });
 
   describe("quitFirefox", () => {
-    it("returns immediately when no Firefox was launched by browsirai", async () => {
+    it("returns immediately when no Firefox was launched by foxbrowser", async () => {
       const mod = await import("../src/firefox-launcher");
       const spy = vi.spyOn(process, "kill");
       await mod.quitFirefox();

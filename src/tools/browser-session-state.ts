@@ -23,7 +23,7 @@ interface StateFile {
   sessionStorage: Record<string, string>;
 }
 
-function getStatesDir(): string { return join(homedir(), ".browsirai", "states"); }
+function getStatesDir(): string { return join(homedir(), ".foxbrowser", "states"); }
 function ensureStatesDir(): string {
   const dir = getStatesDir();
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });

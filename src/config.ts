@@ -1,5 +1,5 @@
 /**
- * Configuration module for browsirai.
+ * Configuration module for foxbrowser.
  *
  * Loads configuration from (in order of precedence):
  *   1. Environment variables (highest priority)
@@ -7,8 +7,8 @@
  *   3. Built-in defaults (lowest priority)
  *
  * Config file resolution:
- *   - BROWSIR_CONFIG env var (explicit path)
- *   - ~/.browsirai/config.json (default location)
+ *   - FOXBROWSER_CONFIG env var (explicit path)
+ *   - ~/.foxbrowser/config.json (default location)
  *
  * All configuration is validated with Zod schemas.
  */
@@ -43,7 +43,7 @@ const connectionConfigSchema = z.object({
   commandTimeout: z.number().int().min(0).default(30000),
 });
 
-const browsiraiConfigSchema = z.object({
+const foxbrowserConfigSchema = z.object({
   firefox: firefoxConfigSchema.default({}),
   screenshot: screenshotConfigSchema.default({}),
   network: networkConfigSchema.default({}),
@@ -86,13 +86,13 @@ const partialConfigSchema = z.object({
 // Types
 // ---------------------------------------------------------------------------
 
-export type BrowserdConfig = z.infer<typeof browsiraiConfigSchema>;
+export type BrowserdConfig = z.infer<typeof foxbrowserConfigSchema>;
 
 // ---------------------------------------------------------------------------
 // Default config
 // ---------------------------------------------------------------------------
 
-export const DEFAULT_CONFIG: BrowserdConfig = browsiraiConfigSchema.parse({});
+export const DEFAULT_CONFIG: BrowserdConfig = foxbrowserConfigSchema.parse({});
 
 // ---------------------------------------------------------------------------
 // Deep merge utility
@@ -133,11 +133,11 @@ function deepMerge<T extends Record<string, unknown>>(
 // ---------------------------------------------------------------------------
 
 function resolveConfigPath(): string {
-  const envPath = process.env.BROWSIR_CONFIG;
+  const envPath = process.env.FOXBROWSER_CONFIG;
   if (envPath) {
     return envPath;
   }
-  return join(homedir(), ".browsirai", "config.json");
+  return join(homedir(), ".foxbrowser", "config.json");
 }
 
 function readConfigFile(configPath: string): Record<string, unknown> | null {
@@ -150,7 +150,7 @@ function readConfigFile(configPath: string): Record<string, unknown> | null {
     const parsed: unknown = JSON.parse(raw);
 
     if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-      console.warn("browsirai: config file is not a JSON object, using defaults");
+      console.warn("foxbrowser: config file is not a JSON object, using defaults");
       return null;
     }
 
@@ -160,7 +160,7 @@ function readConfigFile(configPath: string): Record<string, unknown> | null {
       return null;
     }
 
-    console.warn(`browsirai: failed to parse config file at ${configPath}, using defaults`);
+    console.warn(`foxbrowser: failed to parse config file at ${configPath}, using defaults`);
     return null;
   }
 }
@@ -181,8 +181,8 @@ function applyEnvOverrides(config: BrowserdConfig): BrowserdConfig {
     }
   }
 
-  // BROWSIR_HOST -> firefox.host
-  const host = process.env.BROWSIR_HOST;
+  // FOXBROWSER_HOST -> firefox.host
+  const host = process.env.FOXBROWSER_HOST;
   if (host !== undefined && host !== "") {
     result.firefox.host = host;
   }
@@ -195,11 +195,11 @@ function applyEnvOverrides(config: BrowserdConfig): BrowserdConfig {
 // ---------------------------------------------------------------------------
 
 /**
- * Load the browsirai configuration.
+ * Load the foxbrowser configuration.
  *
  * Resolution order (highest priority wins):
  *   1. Environment variables
- *   2. Config file (BROWSIR_CONFIG path or ~/.browsirai/config.json)
+ *   2. Config file (FOXBROWSER_CONFIG path or ~/.foxbrowser/config.json)
  *   3. Built-in defaults
  */
 export function loadConfig(): BrowserdConfig {
@@ -216,7 +216,7 @@ export function loadConfig(): BrowserdConfig {
     if (validation.success) {
       config = deepMerge(config, validation.data as Record<string, unknown>);
     } else {
-      console.warn("browsirai: config file validation error, using defaults");
+      console.warn("foxbrowser: config file validation error, using defaults");
     }
   }
 

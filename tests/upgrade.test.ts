@@ -130,7 +130,7 @@ describe("getInstallPath", () => {
   it("returns a valid directory path", async () => {
     const { getInstallPath } = await loadUpgrade();
     const path = getInstallPath();
-    // Should be the browsirai project root (parent of parent of src/upgrade.ts)
+    // Should be the foxbrowser project root (parent of parent of src/upgrade.ts)
     expect(path).toBeTruthy();
     expect(typeof path).toBe("string");
   });
@@ -340,7 +340,7 @@ describe("checkForUpgrade", () => {
 
     expect(cpMocks.spawn).toHaveBeenCalledWith(
       "npm",
-      ["install", "-g", "browsirai@2.0.0"],
+      ["install", "-g", "foxbrowser@2.0.0"],
       expect.objectContaining({ stdio: "ignore", detached: true }),
     );
 
@@ -401,13 +401,13 @@ describe("checkForUpgrade", () => {
       throw new Error("no npm");
     });
 
-    globalThis.fetch = vi.fn().mockResolvedValue(fakeResponse({ name: "browsirai" }));
+    globalThis.fetch = vi.fn().mockResolvedValue(fakeResponse({ name: "foxbrowser" }));
 
     const result = await checkForUpgrade();
     expect(result).toBeNull();
   });
 
-  it("writes status to ~/.browsirai/upgrade.json", async () => {
+  it("writes status to ~/.foxbrowser/upgrade.json", async () => {
     const { checkForUpgrade } = await loadUpgrade();
 
     fsMocks.existsSync.mockReturnValue(false);
@@ -423,7 +423,7 @@ describe("checkForUpgrade", () => {
 
     // Should create directory
     expect(fsMocks.mkdirSync).toHaveBeenCalledWith(
-      expect.stringContaining(".browsirai"),
+      expect.stringContaining(".foxbrowser"),
       { recursive: true },
     );
 

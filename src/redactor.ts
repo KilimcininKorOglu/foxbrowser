@@ -1,5 +1,5 @@
 /**
- * Secret redaction utilities for browsirai.
+ * Secret redaction utilities for foxbrowser.
  *
  * Redacts sensitive values from headers, JSON bodies, inline text,
  * and network event objects to prevent secret leakage in logs/output.

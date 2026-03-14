@@ -1,11 +1,11 @@
 /**
- * Auto-upgrade system for browsirai.
+ * Auto-upgrade system for foxbrowser.
  *
  * On MCP server start, checks npm registry for a newer version.
  * If found, performs a background upgrade (npm cache clean for npx,
  * npm install -g for global). Changes apply on next server restart.
  *
- * State is persisted to ~/.browsirai/upgrade.json with a 1-hour rate limit.
+ * State is persisted to ~/.foxbrowser/upgrade.json with a 1-hour rate limit.
  */
 
 import { spawn, execSync } from "node:child_process";
@@ -32,8 +32,8 @@ export type InstallMethod = "npx" | "global" | "dev";
 // Paths
 // ---------------------------------------------------------------------------
 
-const BROWSIR_DIR = join(homedir(), ".browsirai");
-const UPGRADE_FILE = join(BROWSIR_DIR, "upgrade.json");
+const FOXBROWSER_DIR = join(homedir(), ".foxbrowser");
+const UPGRADE_FILE = join(FOXBROWSER_DIR, "upgrade.json");
 const CHECK_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
 
 // ---------------------------------------------------------------------------
@@ -41,7 +41,7 @@ const CHECK_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
 // ---------------------------------------------------------------------------
 
 /**
- * Detect how browsirai was installed by inspecting the running script path.
+ * Detect how foxbrowser was installed by inspecting the running script path.
  */
 export function getInstallMethod(): InstallMethod {
   try {
@@ -81,7 +81,7 @@ export function getInstallMethod(): InstallMethod {
 }
 
 /**
- * Get the resolved install path of browsirai.
+ * Get the resolved install path of foxbrowser.
  */
 export function getInstallPath(): string {
   try {
@@ -122,7 +122,7 @@ export function getUpgradeStatus(): UpgradeStatus | null {
 
 function writeUpgradeStatus(status: UpgradeStatus): void {
   try {
-    mkdirSync(BROWSIR_DIR, { recursive: true });
+    mkdirSync(FOXBROWSER_DIR, { recursive: true });
     writeFileSync(UPGRADE_FILE, JSON.stringify(status, null, 2));
   } catch {
     // Non-critical — status just won't be cached
@@ -155,7 +155,7 @@ export async function checkForUpgrade(): Promise<UpgradeStatus | null> {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 5000);
 
-    const res = await fetch("https://registry.npmjs.org/browsirai/latest", {
+    const res = await fetch("https://registry.npmjs.org/foxbrowser/latest", {
       signal: controller.signal,
       headers: { Accept: "application/json" },
     });
@@ -179,7 +179,7 @@ export async function checkForUpgrade(): Promise<UpgradeStatus | null> {
     // Perform background upgrade if newer version available
     if (isNewer(VERSION, latest)) {
       process.stderr.write(
-        `browsirai: v${latest} available (current: v${VERSION}). Upgrading in background...\n`,
+        `foxbrowser: v${latest} available (current: v${VERSION}). Upgrading in background...\n`,
       );
 
       if (method === "npx") {
@@ -189,7 +189,7 @@ export async function checkForUpgrade(): Promise<UpgradeStatus | null> {
           detached: true,
         }).unref();
       } else if (method === "global") {
-        spawn("npm", ["install", "-g", `browsirai@${latest}`], {
+        spawn("npm", ["install", "-g", `foxbrowser@${latest}`], {
           stdio: "ignore",
           detached: true,
         }).unref();

@@ -1,5 +1,5 @@
 /**
- * MCP Server setup for browsirai.
+ * MCP Server setup for foxbrowser.
  *
  * Creates and configures an McpServer with all browser tools registered,
  * connected to the user's Chrome via CDP.
@@ -16,7 +16,7 @@ import { registerTools } from "./tools/index.js";
  */
 export async function createServer(): Promise<McpServer> {
   const server = new McpServer({
-    name: "browsirai",
+    name: "foxbrowser",
     version: VERSION,
   });
 

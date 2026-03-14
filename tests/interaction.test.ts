@@ -1,5 +1,5 @@
 /**
- * interaction.test.ts — TDD tests for ALL mutating/interaction tools in browsirai.
+ * interaction.test.ts — TDD tests for ALL mutating/interaction tools in foxbrowser.
  *
  * Tools covered:
  *   browser_navigate, browser_navigate_back, browser_click, browser_fill_form,
@@ -4359,7 +4359,7 @@ describe("browser_save_state", () => {
     expect(writtenData.url).toBe("https://app.example.com/settings");
   });
 
-  it("should write state file to ~/.browsirai/states/{name}.json", async () => {
+  it("should write state file to ~/.foxbrowser/states/{name}.json", async () => {
     cdp._setResponse("storage.getCookies", { cookies: [] });
     cdp._setResponse("script.evaluate", (params: unknown) => {
       const p = params as { expression: string };
@@ -4372,9 +4372,9 @@ describe("browser_save_state", () => {
 
     const result = await browserSaveState(cdp as never, { name: "my-state" });
 
-    expect(result.path).toBe("/mock-home/.browsirai/states/my-state.json");
+    expect(result.path).toBe("/mock-home/.foxbrowser/states/my-state.json");
     expect(vi.mocked(writeFileSync)).toHaveBeenCalledWith(
-      "/mock-home/.browsirai/states/my-state.json",
+      "/mock-home/.foxbrowser/states/my-state.json",
       expect.any(String),
       "utf-8",
     );
@@ -4394,7 +4394,7 @@ describe("browser_save_state", () => {
     await browserSaveState(cdp as never, { name: "new-state" });
 
     expect(vi.mocked(mkdirSync)).toHaveBeenCalledWith(
-      "/mock-home/.browsirai/states",
+      "/mock-home/.foxbrowser/states",
       { recursive: true },
     );
   });
@@ -4417,8 +4417,8 @@ describe("browser_save_state", () => {
     // writeFileSync should have been called twice to the same path
     const writeCalls = vi.mocked(writeFileSync).mock.calls;
     expect(writeCalls).toHaveLength(2);
-    expect(writeCalls[0][0]).toBe("/mock-home/.browsirai/states/overwrite-test.json");
-    expect(writeCalls[1][0]).toBe("/mock-home/.browsirai/states/overwrite-test.json");
+    expect(writeCalls[0][0]).toBe("/mock-home/.foxbrowser/states/overwrite-test.json");
+    expect(writeCalls[1][0]).toBe("/mock-home/.foxbrowser/states/overwrite-test.json");
   });
 });
 

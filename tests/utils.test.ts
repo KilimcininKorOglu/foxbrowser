@@ -1,5 +1,5 @@
 /**
- * TDD tests for browsirai utility modules.
+ * TDD tests for foxbrowser utility modules.
  *
  * Covers:
  * - Secret Redaction (src/redactor.ts)

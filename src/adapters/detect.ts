@@ -1,5 +1,5 @@
 /**
- * Runtime platform detection for browsirai.
+ * Runtime platform detection for foxbrowser.
  *
  * Inspects environment variables to determine which AI coding platform
  * is invoking the MCP server, enabling platform-specific behavior.
@@ -23,7 +23,7 @@ export interface InstallConfig {
   configPath: string;
   /** JSON key used for MCP server entries. */
   configKey: string;
-  /** The JSON entry for browsirai. */
+  /** The JSON entry for foxbrowser. */
   serverEntry: Record<string, unknown>;
 }
 
@@ -143,7 +143,7 @@ const installConfigs: Record<PlatformId, { configPath: string; configKey: string
  * Get the install configuration for a given platform.
  *
  * Returns the config file path, the JSON key for MCP server entries,
- * and the standard server entry for browsirai.
+ * and the standard server entry for foxbrowser.
  */
 export function getInstallConfig(platformId: PlatformId): InstallConfig {
   const config = installConfigs[platformId];
@@ -152,7 +152,7 @@ export function getInstallConfig(platformId: PlatformId): InstallConfig {
     configKey: config.configKey,
     serverEntry: {
       command: "npx",
-      args: ["-y", "browsirai"],
+      args: ["-y", "foxbrowser"],
     },
   };
 }

@@ -1,5 +1,5 @@
 /**
- * TDD tests for the browsirai MCP server layer.
+ * TDD tests for the foxbrowser MCP server layer.
  *
  * Covers:
  * - MCP server creation and startup
@@ -56,7 +56,7 @@ describe("MCP Server (src/server.ts)", () => {
       name: string;
       version: string;
     };
-    expect(ctorArg.name).toBe("browsirai");
+    expect(ctorArg.name).toBe("foxbrowser");
     expect(ctorArg.version).toMatch(/^\d+\.\d+\.\d+/);
   });
 
@@ -1530,22 +1530,22 @@ describe("CLI (src/cli.ts)", () => {
     vi.resetModules();
   });
 
-  it("`browsirai` (no args) starts the MCP server", async () => {
+  it("`foxbrowser` (no args) starts the MCP server", async () => {
     await runCli([]);
     expect(mockCreateServer).toHaveBeenCalledOnce();
   });
 
-  it("`browsirai doctor` runs diagnostics", async () => {
+  it("`foxbrowser doctor` runs diagnostics", async () => {
     await runCli(["doctor"]);
     expect(mockRunDoctor).toHaveBeenCalledOnce();
   });
 
-  it("`browsirai install` runs platform installer", async () => {
+  it("`foxbrowser install` runs platform installer", async () => {
     await runCli(["install"]);
     expect(mockRunInstall).toHaveBeenCalledOnce();
   });
 
-  it("`browsirai --version` prints version string", async () => {
+  it("`foxbrowser --version` prints version string", async () => {
     const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
     await runCli(["--version"]);
     expect(consoleSpy).toHaveBeenCalledOnce();
@@ -1554,18 +1554,18 @@ describe("CLI (src/cli.ts)", () => {
     consoleSpy.mockRestore();
   });
 
-  it("`browsirai` default command does not call doctor or install", async () => {
+  it("`foxbrowser` default command does not call doctor or install", async () => {
     await runCli([]);
     expect(mockRunDoctor).not.toHaveBeenCalled();
     expect(mockRunInstall).not.toHaveBeenCalled();
   });
 
-  it("`browsirai doctor` does not start the MCP server", async () => {
+  it("`foxbrowser doctor` does not start the MCP server", async () => {
     await runCli(["doctor"]);
     expect(mockCreateServer).not.toHaveBeenCalled();
   });
 
-  it("`browsirai install` does not start the MCP server", async () => {
+  it("`foxbrowser install` does not start the MCP server", async () => {
     await runCli(["install"]);
     expect(mockCreateServer).not.toHaveBeenCalled();
   });
@@ -1656,7 +1656,7 @@ describe("Config (src/config.ts)", () => {
 
   // ----- Config file loading -----
 
-  it("loads config from ~/.browsirai/config.json path", async () => {
+  it("loads config from ~/.foxbrowser/config.json path", async () => {
     const readSpy = vi.fn().mockImplementation(() => {
       const err = new Error("ENOENT") as NodeJS.ErrnoException;
       err.code = "ENOENT";
@@ -1679,7 +1679,7 @@ describe("Config (src/config.ts)", () => {
 
     // Verify it attempted to read from the correct path
     const homedir = (await import("node:os")).homedir();
-    const expectedPath = `${homedir}/.browsirai/config.json`;
+    const expectedPath = `${homedir}/.foxbrowser/config.json`;
     const allCalls = [
       ...readSpy.mock.calls.map((c: unknown[]) => String(c[0])),
     ];
@@ -1689,7 +1689,7 @@ describe("Config (src/config.ts)", () => {
 
     const allPaths = [...allCalls, ...existsCalls];
     const accessedConfigPath = allPaths.some((p) =>
-      p.includes(".browsirai/config.json")
+      p.includes(".foxbrowser/config.json")
     );
     expect(accessedConfigPath).toBe(true);
   });
@@ -1907,14 +1907,14 @@ describe("Config (src/config.ts)", () => {
 
   // ----- Environment variable overrides -----
 
-  it("BROWSIR_CONFIG env var overrides config file path", async () => {
-    const customPath = "/tmp/custom-browsirai-config.json";
+  it("FOXBROWSER_CONFIG env var overrides config file path", async () => {
+    const customPath = "/tmp/custom-foxbrowser-config.json";
     const customConfig = JSON.stringify({
       firefox: { port: 9444 },
     });
 
-    const originalEnv = process.env.BROWSIR_CONFIG;
-    process.env.BROWSIR_CONFIG = customPath;
+    const originalEnv = process.env.FOXBROWSER_CONFIG;
+    process.env.FOXBROWSER_CONFIG = customPath;
 
     vi.doMock("node:fs", async (importOriginal) => {
       const actual =
@@ -1943,9 +1943,9 @@ describe("Config (src/config.ts)", () => {
 
     // Restore env
     if (originalEnv === undefined) {
-      delete process.env.BROWSIR_CONFIG;
+      delete process.env.FOXBROWSER_CONFIG;
     } else {
-      process.env.BROWSIR_CONFIG = originalEnv;
+      process.env.FOXBROWSER_CONFIG = originalEnv;
     }
   });
 
@@ -2530,7 +2530,7 @@ describe("Platform Install Config", () => {
 
     expect(config.serverEntry).toBeDefined();
     expect(config.serverEntry.command).toBe("npx");
-    expect(config.serverEntry.args).toContain("browsirai");
+    expect(config.serverEntry.args).toContain("foxbrowser");
     expect(config.serverEntry.type).toBeUndefined(); // stdio is the default, type field optional
   });
 });
@@ -2594,7 +2594,7 @@ describe("Install Command (src/install.ts)", () => {
     mockGetInstallConfig = vi.fn().mockReturnValue({
       configPath: ".mcp.json",
       configKey: "mcpServers",
-      serverEntry: { command: "npx", args: ["-y", "browsirai"] },
+      serverEntry: { command: "npx", args: ["-y", "foxbrowser"] },
     });
 
     vi.doMock("../src/adapters/detect", () => ({
@@ -2627,13 +2627,13 @@ describe("Install Command (src/install.ts)", () => {
       connectFirefox: vi.fn().mockResolvedValue({ success: false, port: 9222, error: "mocked" }),
       findFirefox: vi.fn().mockReturnValue(null),
       isPortReachable: vi.fn().mockResolvedValue(false),
-      getDefaultFirefoxDataDir: vi.fn().mockReturnValue("/tmp/browsirai-test"),
+      getDefaultFirefoxDataDir: vi.fn().mockReturnValue("/tmp/foxbrowser-test"),
     }));
     vi.doMock("../src/firefox-launcher.js", () => ({
       connectFirefox: vi.fn().mockResolvedValue({ success: false, port: 9222, error: "mocked" }),
       findFirefox: vi.fn().mockReturnValue(null),
       isPortReachable: vi.fn().mockResolvedValue(false),
-      getDefaultFirefoxDataDir: vi.fn().mockReturnValue("/tmp/browsirai-test"),
+      getDefaultFirefoxDataDir: vi.fn().mockReturnValue("/tmp/foxbrowser-test"),
     }));
 
     const mod = await import("../src/install");
@@ -2710,15 +2710,15 @@ describe("Install Command (src/install.ts)", () => {
         mockWriteFileSync.mock.calls[0]![1] as string
       );
       expect(writtenContent).toHaveProperty("mcpServers");
-      expect(writtenContent.mcpServers).toHaveProperty("browsirai");
-      expect(writtenContent.mcpServers.browsirai.command).toBe("npx");
+      expect(writtenContent.mcpServers).toHaveProperty("foxbrowser");
+      expect(writtenContent.mcpServers.foxbrowser.command).toBe("npx");
     });
 
     it("should generate correct config JSON for cursor", async () => {
       mockGetInstallConfig.mockReturnValue({
         configPath: ".cursor/mcp.json",
         configKey: "mcpServers",
-        serverEntry: { command: "npx", args: ["-y", "browsirai"] },
+        serverEntry: { command: "npx", args: ["-y", "foxbrowser"] },
       });
       mockSelect.mockResolvedValueOnce("cursor");
       mockSelect.mockResolvedValueOnce("project");
@@ -2730,14 +2730,14 @@ describe("Install Command (src/install.ts)", () => {
         mockWriteFileSync.mock.calls[0]![1] as string
       );
       expect(writtenContent).toHaveProperty("mcpServers");
-      expect(writtenContent.mcpServers).toHaveProperty("browsirai");
+      expect(writtenContent.mcpServers).toHaveProperty("foxbrowser");
     });
 
     it("should generate correct config JSON for gemini-cli", async () => {
       mockGetInstallConfig.mockReturnValue({
         configPath: "~/.gemini/settings.json",
         configKey: "mcpServers",
-        serverEntry: { command: "npx", args: ["-y", "browsirai"] },
+        serverEntry: { command: "npx", args: ["-y", "foxbrowser"] },
       });
       mockSelect.mockResolvedValueOnce("gemini-cli");
       mockSelect.mockResolvedValueOnce("global");
@@ -2749,14 +2749,14 @@ describe("Install Command (src/install.ts)", () => {
         mockWriteFileSync.mock.calls[0]![1] as string
       );
       expect(writtenContent).toHaveProperty("mcpServers");
-      expect(writtenContent.mcpServers).toHaveProperty("browsirai");
+      expect(writtenContent.mcpServers).toHaveProperty("foxbrowser");
     });
 
     it('should generate correct config JSON for vscode-copilot (uses "servers" key not "mcpServers")', async () => {
       mockGetInstallConfig.mockReturnValue({
         configPath: ".vscode/mcp.json",
         configKey: "servers",
-        serverEntry: { command: "npx", args: ["-y", "browsirai"] },
+        serverEntry: { command: "npx", args: ["-y", "foxbrowser"] },
       });
       mockSelect.mockResolvedValueOnce("vscode-copilot");
       mockSelect.mockResolvedValueOnce("project");
@@ -2770,14 +2770,14 @@ describe("Install Command (src/install.ts)", () => {
       // VS Code Copilot uses "servers" key, not "mcpServers"
       expect(writtenContent).toHaveProperty("servers");
       expect(writtenContent).not.toHaveProperty("mcpServers");
-      expect(writtenContent.servers).toHaveProperty("browsirai");
+      expect(writtenContent.servers).toHaveProperty("foxbrowser");
     });
 
     it('should generate correct config JSON for opencode (uses "mcp" key)', async () => {
       mockGetInstallConfig.mockReturnValue({
         configPath: "opencode.json",
         configKey: "mcp",
-        serverEntry: { command: "npx", args: ["-y", "browsirai"] },
+        serverEntry: { command: "npx", args: ["-y", "foxbrowser"] },
       });
       mockSelect.mockResolvedValueOnce("opencode");
       mockSelect.mockResolvedValueOnce("project");
@@ -2789,14 +2789,14 @@ describe("Install Command (src/install.ts)", () => {
         mockWriteFileSync.mock.calls[0]![1] as string
       );
       expect(writtenContent).toHaveProperty("mcp");
-      expect(writtenContent.mcp).toHaveProperty("browsirai");
+      expect(writtenContent.mcp).toHaveProperty("foxbrowser");
     });
 
     it('should generate correct config JSON for zed (uses "context_servers" key)', async () => {
       mockGetInstallConfig.mockReturnValue({
         configPath: "~/.config/zed/settings.json",
         configKey: "context_servers",
-        serverEntry: { command: "npx", args: ["-y", "browsirai"] },
+        serverEntry: { command: "npx", args: ["-y", "foxbrowser"] },
       });
       mockSelect.mockResolvedValueOnce("zed");
       mockSelect.mockResolvedValueOnce("global");
@@ -2808,7 +2808,7 @@ describe("Install Command (src/install.ts)", () => {
         mockWriteFileSync.mock.calls[0]![1] as string
       );
       expect(writtenContent).toHaveProperty("context_servers");
-      expect(writtenContent.context_servers).toHaveProperty("browsirai");
+      expect(writtenContent.context_servers).toHaveProperty("foxbrowser");
     });
 
     it("should write config to correct file path for project scope", async () => {
@@ -2828,7 +2828,7 @@ describe("Install Command (src/install.ts)", () => {
       mockGetInstallConfig.mockReturnValue({
         configPath: "~/.gemini/settings.json",
         configKey: "mcpServers",
-        serverEntry: { command: "npx", args: ["-y", "browsirai"] },
+        serverEntry: { command: "npx", args: ["-y", "foxbrowser"] },
       });
       mockSelect.mockResolvedValueOnce("gemini-cli");
       mockSelect.mockResolvedValueOnce("global");
@@ -2890,8 +2890,8 @@ describe("Install Command (src/install.ts)", () => {
       );
       // Should preserve existing entries
       expect(writtenContent.mcpServers.otherServer).toBeDefined();
-      // Should add browsirai
-      expect(writtenContent.mcpServers.browsirai).toBeDefined();
+      // Should add foxbrowser
+      expect(writtenContent.mcpServers.foxbrowser).toBeDefined();
     });
 
     it("should show success message with file path after install", async () => {
@@ -2938,13 +2938,13 @@ describe("Doctor Command (src/doctor.ts)", () => {
       getInstallConfig: vi.fn().mockReturnValue({
         configPath: ".mcp.json",
         configKey: "mcpServers",
-        serverEntry: { command: "npx", args: ["-y", "browsirai"] },
+        serverEntry: { command: "npx", args: ["-y", "foxbrowser"] },
       }),
     }));
 
     mockExistsSync = vi.fn().mockReturnValue(true);
     mockReadFileSync = vi.fn().mockReturnValue(
-      JSON.stringify({ mcpServers: { browsirai: { command: "npx" } } })
+      JSON.stringify({ mcpServers: { foxbrowser: { command: "npx" } } })
     );
 
     vi.doMock("node:fs", () => ({
@@ -2989,13 +2989,13 @@ describe("Doctor Command (src/doctor.ts)", () => {
       connectFirefox: vi.fn().mockResolvedValue({ success: false, port: 9222, error: "Firefox remote debugging is not enabled." }),
       findFirefox: vi.fn().mockReturnValue(null),
       isPortReachable: vi.fn().mockResolvedValue(false),
-      getDefaultFirefoxDataDir: vi.fn().mockReturnValue("/tmp/browsirai-test"),
+      getDefaultFirefoxDataDir: vi.fn().mockReturnValue("/tmp/foxbrowser-test"),
     }));
     vi.doMock("../src/firefox-launcher.js", () => ({
       connectFirefox: vi.fn().mockResolvedValue({ success: false, port: 9222, error: "Firefox remote debugging is not enabled." }),
       findFirefox: vi.fn().mockReturnValue(null),
       isPortReachable: vi.fn().mockResolvedValue(false),
-      getDefaultFirefoxDataDir: vi.fn().mockReturnValue("/tmp/browsirai-test"),
+      getDefaultFirefoxDataDir: vi.fn().mockReturnValue("/tmp/foxbrowser-test"),
     }));
 
     const mod = await import("../src/doctor");
@@ -3062,19 +3062,19 @@ describe("Doctor Command (src/doctor.ts)", () => {
       expect(mockDetectPlatform).toHaveBeenCalled();
     });
 
-    it("should check if browsirai is configured in platform config", async () => {
+    it("should check if foxbrowser is configured in platform config", async () => {
       mockExistsSync.mockReturnValue(true);
       mockReadFileSync.mockReturnValue(
         JSON.stringify({
           mcpServers: {
-            browsirai: { command: "npx", args: ["-y", "browsirai"] },
+            foxbrowser: { command: "npx", args: ["-y", "foxbrowser"] },
           },
         })
       );
 
       const result = await runDoctor();
 
-      // Should check for browsirai entry in config file
+      // Should check for foxbrowser entry in config file
       expect(mockExistsSync).toHaveBeenCalled();
       expect(mockReadFileSync).toHaveBeenCalled();
     });

@@ -1,5 +1,5 @@
 /**
- * Runs the platform installer — configures browsirai for the current OS and IDE.
+ * Runs the platform installer — configures foxbrowser for the current OS and IDE.
  */
 
 import { intro, select, confirm, spinner, outro, note, isCancel, cancel, log } from "@clack/prompts";
@@ -42,12 +42,12 @@ function resolveConfigPath(configPath: string, scope: string): string {
 }
 
 export async function runInstall(): Promise<void> {
-  intro("browsirai installer");
+  intro("foxbrowser installer");
 
   // Auto-detect platform
   const detected = detectPlatform();
 
-  // Check which platforms already have browsirai installed
+  // Check which platforms already have foxbrowser installed
   const installedPlatforms = new Set<PlatformId>();
   for (const opt of platformOptions) {
     const config = getInstallConfig(opt.value);
@@ -62,7 +62,7 @@ export async function runInstall(): Promise<void> {
         try {
           const existing = JSON.parse(readFileSync(filePath, "utf-8")) as Record<string, unknown>;
           const section = existing[config.configKey] as Record<string, unknown> | undefined;
-          if (section?.browsirai) installedPlatforms.add(opt.value);
+          if (section?.foxbrowser) installedPlatforms.add(opt.value);
         } catch { /* skip malformed */ }
       }
     }
@@ -106,7 +106,7 @@ export async function runInstall(): Promise<void> {
   // Build config object
   const serverConfig: Record<string, unknown> = {
     [config.configKey]: {
-      browsirai: config.serverEntry,
+      foxbrowser: config.serverEntry,
     },
   };
 
@@ -119,7 +119,7 @@ export async function runInstall(): Promise<void> {
     const existingConfig = JSON.parse(existingRaw as string) as Record<string, unknown>;
 
     const shouldMerge = await confirm({
-      message: `Config file already exists at ${filePath}. Merge browsirai into it?`,
+      message: `Config file already exists at ${filePath}. Merge foxbrowser into it?`,
     });
 
     if (isCancel(shouldMerge) || !shouldMerge) {
@@ -131,7 +131,7 @@ export async function runInstall(): Promise<void> {
     const existingSection = (existingConfig[config.configKey] ?? {}) as Record<string, unknown>;
     existingConfig[config.configKey] = {
       ...existingSection,
-      browsirai: config.serverEntry,
+      foxbrowser: config.serverEntry,
     };
 
     // Ensure parent directory exists
@@ -156,8 +156,8 @@ export async function runInstall(): Promise<void> {
       : `BiDi reachable on port ${connection.port}`);
   } else {
     s.stop(connection.error ?? "Could not connect to Firefox");
-    log.warn("Run `browsirai doctor` to diagnose.");
+    log.warn("Run `foxbrowser doctor` to diagnose.");
   }
 
-  outro("browsirai is ready! Your AI agent can now control your browser.");
+  outro("foxbrowser is ready! Your AI agent can now control your browser.");
 }

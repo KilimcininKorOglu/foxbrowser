@@ -1,7 +1,7 @@
 /**
- * CLI runner for browsirai.
+ * CLI runner for foxbrowser.
  *
- * Parses `browsirai <command> [args...]`, connects to Chrome via CDP,
+ * Parses `foxbrowser <command> [args...]`, connects to Chrome via CDP,
  * looks up the command in a registry, and executes it.
  */
 
@@ -164,9 +164,9 @@ function buildRegistry(
 
 function printHelp(categories: CommandCategory[]): void {
   console.log();
-  console.log(pc.bold("browsirai") + " — Browser automation from the terminal");
+  console.log(pc.bold("foxbrowser") + " — Browser automation from the terminal");
   console.log();
-  console.log(pc.dim("Usage:") + "  browsirai <command> [args...] [--flags]");
+  console.log(pc.dim("Usage:") + "  foxbrowser <command> [args...] [--flags]");
   console.log();
 
   if (categories.length === 0) {
@@ -190,12 +190,12 @@ function printHelp(categories: CommandCategory[]): void {
   }
 
   console.log(pc.dim("  Examples:"));
-  console.log(pc.dim('    browsirai open example.com'));
-  console.log(pc.dim('    browsirai snapshot -i'));
-  console.log(pc.dim('    browsirai click @e5'));
-  console.log(pc.dim('    browsirai fill @e2 "hello world"'));
-  console.log(pc.dim('    browsirai press Enter'));
-  console.log(pc.dim('    browsirai eval "document.title"'));
+  console.log(pc.dim('    foxbrowser open example.com'));
+  console.log(pc.dim('    foxbrowser snapshot -i'));
+  console.log(pc.dim('    foxbrowser click @e5'));
+  console.log(pc.dim('    foxbrowser fill @e2 "hello world"'));
+  console.log(pc.dim('    foxbrowser press Enter'));
+  console.log(pc.dim('    foxbrowser eval "document.title"'));
   console.log();
 }
 
@@ -245,7 +245,7 @@ export async function runCLI(args: string[]): Promise<void> {
     );
     console.log();
     console.log(
-      pc.dim("Run ") + pc.bold("browsirai --help") + pc.dim(" to see available commands."),
+      pc.dim("Run ") + pc.bold("foxbrowser --help") + pc.dim(" to see available commands."),
     );
 
     // Suggest similar commands

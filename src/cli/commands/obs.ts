@@ -1,5 +1,5 @@
 /**
- * Observation CLI commands for browsirai.
+ * Observation CLI commands for foxbrowser.
  *
  * Commands: snapshot, screenshot, html, eval, find, source, console, network
  *
@@ -25,7 +25,7 @@ import { browserNetworkRequests } from "../../tools/browser-network-requests.js"
 const snapshotCommand: CLICommand = {
   name: "snapshot",
   description: "Capture the accessibility tree of the page",
-  usage: "browsirai snapshot [-i] [-c] [-d N] [-s selector]",
+  usage: "foxbrowser snapshot [-i] [-c] [-d N] [-s selector]",
   run: async (cdp, args) => {
     const flags = parseFlags(args);
 
@@ -58,7 +58,7 @@ const snapshotCommand: CLICommand = {
 const screenshotCommand: CLICommand = {
   name: "screenshot",
   description: "Capture a screenshot of the page",
-  usage: "browsirai screenshot [-o file.png] [--fullPage] [--selector=...] [--format=png]",
+  usage: "foxbrowser screenshot [-o file.png] [--fullPage] [--selector=...] [--format=png]",
   run: async (cdp, args) => {
     const flags = parseFlags(args);
 
@@ -90,7 +90,7 @@ const screenshotCommand: CLICommand = {
 const htmlCommand: CLICommand = {
   name: "html",
   description: "Retrieve page or element HTML",
-  usage: "browsirai html [--selector=...]",
+  usage: "foxbrowser html [--selector=...]",
   run: async (cdp, args) => {
     const flags = parseFlags(args);
 
@@ -115,7 +115,7 @@ const htmlCommand: CLICommand = {
 const evalCommand: CLICommand = {
   name: "eval",
   description: "Evaluate a JavaScript expression in the browser",
-  usage: 'browsirai eval "<expression>"',
+  usage: 'foxbrowser eval "<expression>"',
   run: async (cdp, args) => {
     const flags = parseFlags(args);
 
@@ -123,7 +123,7 @@ const evalCommand: CLICommand = {
     const expression = flags._0;
     if (!expression) {
       console.error("Error: Missing expression argument");
-      console.error('Usage: browsirai eval "<expression>"');
+      console.error('Usage: foxbrowser eval "<expression>"');
       process.exit(1);
     }
 
@@ -153,7 +153,7 @@ const evalCommand: CLICommand = {
 const findCommand: CLICommand = {
   name: "find",
   description: "Find elements by ARIA role, name, or text",
-  usage: "browsirai find [--role=button] [--name=...] [--text=...]",
+  usage: "foxbrowser find [--role=button] [--name=...] [--text=...]",
   run: async (cdp, args) => {
     const flags = parseFlags(args);
 
@@ -186,7 +186,7 @@ const findCommand: CLICommand = {
 const sourceCommand: CLICommand = {
   name: "source",
   description: "Inspect source code location of an element",
-  usage: "browsirai source [--ref=@e5] [--selector=h1]",
+  usage: "foxbrowser source [--ref=@e5] [--selector=h1]",
   run: async (cdp, args) => {
     const flags = parseFlags(args);
 
@@ -196,7 +196,7 @@ const sourceCommand: CLICommand = {
 
     if (!params.ref && !params.selector) {
       console.error("Error: Either --ref or --selector is required");
-      console.error("Usage: browsirai source [--ref=@e5] [--selector=h1]");
+      console.error("Usage: foxbrowser source [--ref=@e5] [--selector=h1]");
       process.exit(1);
     }
 
@@ -236,7 +236,7 @@ const sourceCommand: CLICommand = {
 const consoleCommand: CLICommand = {
   name: "console",
   description: "View captured console messages",
-  usage: "browsirai console [--level=error] [--limit=20]",
+  usage: "foxbrowser console [--level=error] [--limit=20]",
   run: async (cdp, args) => {
     const flags = parseFlags(args);
 
@@ -271,7 +271,7 @@ const consoleCommand: CLICommand = {
 const networkCommand: CLICommand = {
   name: "network",
   description: "View captured network requests",
-  usage: "browsirai network [--filter=*api*] [--limit=10] [--includeHeaders]",
+  usage: "foxbrowser network [--filter=*api*] [--limit=10] [--includeHeaders]",
   run: async (cdp, args) => {
     const flags = parseFlags(args);
 

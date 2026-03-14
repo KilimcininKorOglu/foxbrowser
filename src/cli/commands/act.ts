@@ -1,5 +1,5 @@
 /**
- * Interaction CLI commands for browsirai.
+ * Interaction CLI commands for foxbrowser.
  *
  * Commands: click, fill, type, key, hover, drag, select, upload, dialog
  *
@@ -51,13 +51,13 @@ function looksLikeRef(arg: string): boolean {
 const click: CLICommand = {
   name: "click",
   description: "Click an element by ref or CSS selector",
-  usage: "browsirai click <ref-or-selector> [--newTab]",
+  usage: "foxbrowser click <ref-or-selector> [--newTab]",
   async run(cdp, args) {
     const flags = parseFlags(args);
     const target = flags._0;
 
     if (!target) {
-      console.error("Usage: browsirai click <ref-or-selector> [--newTab]");
+      console.error("Usage: foxbrowser click <ref-or-selector> [--newTab]");
       console.error("  Provide an @eN ref or CSS selector as the first argument.");
       process.exit(1);
     }
@@ -88,14 +88,14 @@ const click: CLICommand = {
 const fill: CLICommand = {
   name: "fill",
   description: "Fill a form field with a value",
-  usage: "browsirai fill <ref-or-selector> <value>",
+  usage: "foxbrowser fill <ref-or-selector> <value>",
   async run(cdp, args) {
     const flags = parseFlags(args);
     const target = flags._0;
     const value = flags._1;
 
     if (!target || value === undefined) {
-      console.error("Usage: browsirai fill <ref-or-selector> <value>");
+      console.error("Usage: foxbrowser fill <ref-or-selector> <value>");
       console.error("  Provide an @eN ref or CSS selector and a value.");
       process.exit(1);
     }
@@ -135,13 +135,13 @@ const fill: CLICommand = {
 const type: CLICommand = {
   name: "type",
   description: "Type text into the focused or specified element",
-  usage: "browsirai type <text> [--ref=@e3] [--submit] [--slowly]",
+  usage: "foxbrowser type <text> [--ref=@e3] [--submit] [--slowly]",
   async run(cdp, args) {
     const flags = parseFlags(args);
     const text = flags._0;
 
     if (!text) {
-      console.error("Usage: browsirai type <text> [--ref=@e3] [--submit] [--slowly]");
+      console.error("Usage: foxbrowser type <text> [--ref=@e3] [--submit] [--slowly]");
       console.error("  Provide the text to type as the first argument.");
       process.exit(1);
     }
@@ -173,13 +173,13 @@ const key: CLICommand = {
   name: "press",
   aliases: ["key"],
   description: "Press a key or key combination",
-  usage: "browsirai press <key-combo>",
+  usage: "foxbrowser press <key-combo>",
   async run(cdp, args) {
     const flags = parseFlags(args);
     const keyCombo = flags._0;
 
     if (!keyCombo) {
-      console.error("Usage: browsirai key <key-combo>");
+      console.error("Usage: foxbrowser key <key-combo>");
       console.error("  Examples: Enter, Tab, Control+c, Shift+Tab, Meta+a");
       process.exit(1);
     }
@@ -202,13 +202,13 @@ const key: CLICommand = {
 const hover: CLICommand = {
   name: "hover",
   description: "Hover over an element by ref or selector",
-  usage: "browsirai hover <ref-or-selector>",
+  usage: "foxbrowser hover <ref-or-selector>",
   async run(cdp, args) {
     const flags = parseFlags(args);
     const target = flags._0;
 
     if (!target) {
-      console.error("Usage: browsirai hover <ref-or-selector>");
+      console.error("Usage: foxbrowser hover <ref-or-selector>");
       console.error("  Provide an @eN ref or CSS selector.");
       process.exit(1);
     }
@@ -237,14 +237,14 @@ const hover: CLICommand = {
 const drag: CLICommand = {
   name: "drag",
   description: "Drag from one element to another",
-  usage: "browsirai drag <startRef> <endRef>",
+  usage: "foxbrowser drag <startRef> <endRef>",
   async run(cdp, args) {
     const flags = parseFlags(args);
     const startArg = flags._0;
     const endArg = flags._1;
 
     if (!startArg || !endArg) {
-      console.error("Usage: browsirai drag <startRef> <endRef>");
+      console.error("Usage: foxbrowser drag <startRef> <endRef>");
       console.error("  Provide two @eN refs (source and target).");
       process.exit(1);
     }
@@ -270,13 +270,13 @@ const drag: CLICommand = {
 const select: CLICommand = {
   name: "select",
   description: "Select option(s) in a <select> element",
-  usage: "browsirai select <ref> <value1> [value2...]",
+  usage: "foxbrowser select <ref> <value1> [value2...]",
   async run(cdp, args) {
     const flags = parseFlags(args);
     const refArg = flags._0;
 
     if (!refArg) {
-      console.error("Usage: browsirai select <ref> <value1> [value2...]");
+      console.error("Usage: foxbrowser select <ref> <value1> [value2...]");
       console.error("  Provide an @eN ref and one or more values to select.");
       process.exit(1);
     }
@@ -290,7 +290,7 @@ const select: CLICommand = {
     }
 
     if (values.length === 0) {
-      console.error("Usage: browsirai select <ref> <value1> [value2...]");
+      console.error("Usage: foxbrowser select <ref> <value1> [value2...]");
       console.error("  Provide at least one value to select.");
       process.exit(1);
     }
@@ -322,13 +322,13 @@ const select: CLICommand = {
 const upload: CLICommand = {
   name: "upload",
   description: "Upload file(s) to a file input element",
-  usage: "browsirai upload <ref> <file1> [file2...]",
+  usage: "foxbrowser upload <ref> <file1> [file2...]",
   async run(cdp, args) {
     const flags = parseFlags(args);
     const refArg = flags._0;
 
     if (!refArg) {
-      console.error("Usage: browsirai upload <ref> <file1> [file2...]");
+      console.error("Usage: foxbrowser upload <ref> <file1> [file2...]");
       console.error("  Provide an @eN ref and one or more file paths.");
       process.exit(1);
     }
@@ -342,7 +342,7 @@ const upload: CLICommand = {
     }
 
     if (paths.length === 0) {
-      console.error("Usage: browsirai upload <ref> <file1> [file2...]");
+      console.error("Usage: foxbrowser upload <ref> <file1> [file2...]");
       console.error("  Provide at least one file path to upload.");
       process.exit(1);
     }
@@ -372,13 +372,13 @@ const upload: CLICommand = {
 const dialog: CLICommand = {
   name: "dialog",
   description: "Accept or dismiss a JavaScript dialog",
-  usage: "browsirai dialog <accept|dismiss> [--text=...]",
+  usage: "foxbrowser dialog <accept|dismiss> [--text=...]",
   async run(cdp, args) {
     const flags = parseFlags(args);
     const action = flags._0;
 
     if (!action || (action !== "accept" && action !== "dismiss")) {
-      console.error("Usage: browsirai dialog <accept|dismiss> [--text=...]");
+      console.error("Usage: foxbrowser dialog <accept|dismiss> [--text=...]");
       console.error("  First argument must be 'accept' or 'dismiss'.");
       process.exit(1);
     }
