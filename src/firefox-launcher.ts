@@ -132,6 +132,21 @@ export function isBiDiHealthy(port: number, host = "127.0.0.1"): Promise<boolean
 // Firefox process management
 // ---------------------------------------------------------------------------
 
+let launchedPid: number | undefined;
+
+export function getLaunchedFirefoxPid(): number | undefined {
+  return launchedPid;
+}
+
+function isProcessAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Checks if Firefox is currently running.
  */
@@ -149,43 +164,56 @@ export function isFirefoxRunning(): boolean {
 }
 
 /**
- * Quits Firefox gracefully, waits for it to fully exit.
+ * Quits the browsirai-launched Firefox process. Only kills the process
+ * that was spawned by launchFirefoxWithDebugging or launchHeadlessFirefox.
+ * Does nothing if no Firefox was launched by browsirai.
  */
 export async function quitFirefox(): Promise<void> {
+  if (launchedPid === undefined) {
+    return;
+  }
+
+  if (!isProcessAlive(launchedPid)) {
+    launchedPid = undefined;
+    return;
+  }
+
   try {
-    if (process.platform === "darwin") {
-      execSync('osascript -e \'tell application "Firefox" to quit\'', { stdio: "pipe", timeout: 5000 });
-    } else if (process.platform === "win32") {
-      execSync("taskkill /IM firefox.exe", { stdio: "pipe", timeout: 5000 });
+    if (process.platform === "win32") {
+      execSync(`taskkill /PID ${launchedPid}`, { stdio: "pipe", timeout: 5000 });
     } else {
-      execSync("pkill -TERM firefox || pkill -TERM firefox-bin", { stdio: "pipe", timeout: 5000 });
+      process.kill(launchedPid, "SIGTERM");
     }
   } catch {
-    // May not be running
+    // May have already exited
   }
 
   for (let i = 0; i < 15; i++) {
-    if (!isFirefoxRunning()) break;
+    if (!isProcessAlive(launchedPid)) {
+      launchedPid = undefined;
+      return;
+    }
     await new Promise(r => setTimeout(r, 200));
   }
 
-  if (isFirefoxRunning()) {
+  if (isProcessAlive(launchedPid)) {
     try {
       if (process.platform === "win32") {
-        execSync("taskkill /F /IM firefox.exe", { stdio: "pipe", timeout: 5000 });
+        execSync(`taskkill /F /PID ${launchedPid}`, { stdio: "pipe", timeout: 5000 });
       } else {
-        execSync("pkill -9 firefox || pkill -9 firefox-bin", { stdio: "pipe", timeout: 5000 });
+        process.kill(launchedPid, "SIGKILL");
       }
     } catch {
       // best effort
     }
 
     for (let i = 0; i < 15; i++) {
-      if (!isFirefoxRunning()) break;
+      if (!isProcessAlive(launchedPid)) break;
       await new Promise(r => setTimeout(r, 200));
     }
   }
 
+  launchedPid = undefined;
   await new Promise(r => setTimeout(r, 500));
 }
 
@@ -274,6 +302,7 @@ export async function launchFirefoxWithDebugging(port = 9222, headless = false):
     detached: true,
     stdio: "ignore",
   });
+  if (child.pid !== undefined) launchedPid = child.pid;
   child.unref();
 
   // Wait for BiDi to become healthy (up to 15 seconds)
@@ -326,6 +355,7 @@ export async function launchHeadlessFirefox(): Promise<LaunchResult> {
     detached: true,
     stdio: "ignore",
   });
+  if (child.pid !== undefined) launchedPid = child.pid;
   child.unref();
 
   for (let i = 0; i < 75; i++) {

@@ -84,4 +84,26 @@ describe("Firefox launcher", () => {
       expect(result).toBe(false);
     });
   });
+
+  describe("getLaunchedFirefoxPid", () => {
+    it("exports getLaunchedFirefoxPid function", async () => {
+      const mod = await import("../src/firefox-launcher");
+      expect(typeof mod.getLaunchedFirefoxPid).toBe("function");
+    });
+
+    it("returns undefined when no Firefox was launched", async () => {
+      const mod = await import("../src/firefox-launcher");
+      expect(mod.getLaunchedFirefoxPid()).toBeUndefined();
+    });
+  });
+
+  describe("quitFirefox", () => {
+    it("returns immediately when no Firefox was launched by browsirai", async () => {
+      const mod = await import("../src/firefox-launcher");
+      const spy = vi.spyOn(process, "kill");
+      await mod.quitFirefox();
+      expect(spy).not.toHaveBeenCalled();
+      spy.mockRestore();
+    });
+  });
 });
