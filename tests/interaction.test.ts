@@ -3334,28 +3334,22 @@ describe("browser_route", () => {
     expect(enableCalls).toHaveLength(1);
     expect(enableCalls[0].params).toEqual(
       expect.objectContaining({
-        patterns: expect.arrayContaining([
-          expect.objectContaining({ urlPattern: "https://api.example.com/users" }),
+        urlPatterns: expect.arrayContaining([
+          expect.objectContaining({ type: "pattern", pattern: "https://api.example.com/users" }),
         ]),
       })
     );
 
     // Simulate a matching request being paused
-    await cdp._emitAsync("network.beforeRequestSent", {
-      requestId: "req-1",
-      request: {
-        url: "https://api.example.com/users",
-        method: "GET",
-      },
-    });
+    await cdp._emitAsync("network.beforeRequestSent", { request: { request: "req-1", url: "https://api.example.com/users" }, isBlocked: true });
 
     // Verify Fetch.fulfillRequest was called with the mock body
     const fulfillCalls = cdp._getCalls("network.provideResponse");
     expect(fulfillCalls).toHaveLength(1);
     expect(fulfillCalls[0].params).toEqual(
       expect.objectContaining({
-        requestId: "req-1",
-        body: expect.any(String), // base64-encoded body
+        request: "req-1",
+        body: expect.objectContaining({ type: "string", value: expect.any(String) }),
       })
     );
   });
@@ -3371,20 +3365,14 @@ describe("browser_route", () => {
     });
 
     // Simulate request paused
-    await cdp._emitAsync("network.beforeRequestSent", {
-      requestId: "req-2",
-      request: {
-        url: "https://api.example.com/not-found",
-        method: "GET",
-      },
-    });
+    await cdp._emitAsync("network.beforeRequestSent", { request: { request: "req-2", url: "https://api.example.com/not-found" }, isBlocked: true });
 
     const fulfillCalls = cdp._getCalls("network.provideResponse");
     expect(fulfillCalls).toHaveLength(1);
     expect(fulfillCalls[0].params).toEqual(
       expect.objectContaining({
-        requestId: "req-2",
-        responseCode: 404,
+        request: "req-2",
+        statusCode: 404,
       })
     );
   });
@@ -3403,22 +3391,16 @@ describe("browser_route", () => {
     });
 
     // Simulate request paused
-    await cdp._emitAsync("network.beforeRequestSent", {
-      requestId: "req-3",
-      request: {
-        url: "https://api.example.com/data",
-        method: "GET",
-      },
-    });
+    await cdp._emitAsync("network.beforeRequestSent", { request: { request: "req-3", url: "https://api.example.com/data" }, isBlocked: true });
 
     const fulfillCalls = cdp._getCalls("network.provideResponse");
     expect(fulfillCalls).toHaveLength(1);
     expect(fulfillCalls[0].params).toEqual(
       expect.objectContaining({
-        requestId: "req-3",
-        responseHeaders: expect.arrayContaining([
-          expect.objectContaining({ name: "Content-Type", value: "application/json" }),
-          expect.objectContaining({ name: "X-Custom-Header", value: "test-value" }),
+        request: "req-3",
+        headers: expect.arrayContaining([
+          expect.objectContaining({ name: "Content-Type", value: expect.objectContaining({ value: "application/json" }) }),
+          expect.objectContaining({ name: "X-Custom-Header", value: expect.objectContaining({ value: "test-value" }) }),
         ]),
       })
     );
@@ -3437,25 +3419,19 @@ describe("browser_route", () => {
     expect(enableCalls).toHaveLength(1);
     expect(enableCalls[0].params).toEqual(
       expect.objectContaining({
-        patterns: expect.arrayContaining([
-          expect.objectContaining({ urlPattern: "**/api/**" }),
+        urlPatterns: expect.arrayContaining([
+          expect.objectContaining({ type: "pattern", pattern: "**/api/**" }),
         ]),
       })
     );
 
     // Simulate a matching request
-    await cdp._emitAsync("network.beforeRequestSent", {
-      requestId: "req-glob-1",
-      request: {
-        url: "https://example.com/api/v2/users",
-        method: "GET",
-      },
-    });
+    await cdp._emitAsync("network.beforeRequestSent", { request: { request: "req-glob-1", url: "https://example.com/api/v2/users" }, isBlocked: true });
 
     const fulfillCalls = cdp._getCalls("network.provideResponse");
     expect(fulfillCalls).toHaveLength(1);
     expect(fulfillCalls[0].params).toEqual(
-      expect.objectContaining({ requestId: "req-glob-1" })
+      expect.objectContaining({ request: "req-glob-1" })
     );
   });
 
@@ -3479,31 +3455,19 @@ describe("browser_route", () => {
     expect(enableCalls.length).toBeGreaterThanOrEqual(2);
 
     // Simulate request for /users
-    await cdp._emitAsync("network.beforeRequestSent", {
-      requestId: "req-users",
-      request: {
-        url: "https://api.example.com/users",
-        method: "GET",
-      },
-    });
+    await cdp._emitAsync("network.beforeRequestSent", { request: { request: "req-users", url: "https://api.example.com/users" }, isBlocked: true });
 
     // Simulate request for /posts
-    await cdp._emitAsync("network.beforeRequestSent", {
-      requestId: "req-posts",
-      request: {
-        url: "https://api.example.com/posts",
-        method: "GET",
-      },
-    });
+    await cdp._emitAsync("network.beforeRequestSent", { request: { request: "req-posts", url: "https://api.example.com/posts" }, isBlocked: true });
 
     const fulfillCalls = cdp._getCalls("network.provideResponse");
     expect(fulfillCalls).toHaveLength(2);
 
     const usersFulfill = fulfillCalls.find(
-      (c) => (c.params as any).requestId === "req-users"
+      (c) => (c.params as any).request === "req-users"
     );
     const postsFulfill = fulfillCalls.find(
-      (c) => (c.params as any).requestId === "req-posts"
+      (c) => (c.params as any).request === "req-posts"
     );
     expect(usersFulfill).toBeDefined();
     expect(postsFulfill).toBeDefined();
@@ -3526,20 +3490,14 @@ describe("browser_route", () => {
     });
 
     // Simulate request — should use the LATEST route definition
-    await cdp._emitAsync("network.beforeRequestSent", {
-      requestId: "req-config",
-      request: {
-        url: "https://api.example.com/config",
-        method: "GET",
-      },
-    });
+    await cdp._emitAsync("network.beforeRequestSent", { request: { request: "req-config", url: "https://api.example.com/config" }, isBlocked: true });
 
     const fulfillCalls = cdp._getCalls("network.provideResponse");
     expect(fulfillCalls).toHaveLength(1);
     // The body should be the second (overridden) value, base64-encoded
     const body = fulfillCalls[0].params as Record<string, unknown>;
     // Decode the base64 body to verify it's the updated value
-    const decodedBody = Buffer.from(body.body as string, "base64").toString("utf-8");
+    const decodedBody = (body.body as { value: string }).value;
     expect(decodedBody).toBe('{"version": 2}');
   });
 
@@ -3553,19 +3511,13 @@ describe("browser_route", () => {
       body: { data: [1, 2, 3] } as any,
     });
 
-    await cdp._emitAsync("network.beforeRequestSent", {
-      requestId: "req-json",
-      request: {
-        url: "https://api.example.com/json",
-        method: "GET",
-      },
-    });
+    await cdp._emitAsync("network.beforeRequestSent", { request: { request: "req-json", url: "https://api.example.com/json" }, isBlocked: true });
 
     const fulfillCalls = cdp._getCalls("network.provideResponse");
     expect(fulfillCalls).toHaveLength(1);
     // Decode body and verify JSON was stringified
     const body = fulfillCalls[0].params as Record<string, unknown>;
-    const decodedBody = Buffer.from(body.body as string, "base64").toString("utf-8");
+    const decodedBody = (body.body as { value: string }).value;
     const parsed = JSON.parse(decodedBody);
     expect(parsed).toEqual({ data: [1, 2, 3] });
   });
@@ -3581,13 +3533,7 @@ describe("browser_route", () => {
     });
 
     // Simulate a NON-matching request
-    await cdp._emitAsync("network.beforeRequestSent", {
-      requestId: "req-other",
-      request: {
-        url: "https://cdn.example.com/image.png",
-        method: "GET",
-      },
-    });
+    await cdp._emitAsync("network.beforeRequestSent", { request: { request: "req-other", url: "https://cdn.example.com/image.png" }, isBlocked: true });
 
     // Should NOT fulfill this request
     const fulfillCalls = cdp._getCalls("network.provideResponse");
@@ -3597,7 +3543,7 @@ describe("browser_route", () => {
     const continueCalls = cdp._getCalls("network.continueRequest");
     expect(continueCalls).toHaveLength(1);
     expect(continueCalls[0].params).toEqual(
-      expect.objectContaining({ requestId: "req-other" })
+      expect.objectContaining({ request: "req-other" })
     );
   });
 });
@@ -3631,26 +3577,20 @@ describe("browser_abort", () => {
     expect(enableCalls).toHaveLength(1);
     expect(enableCalls[0].params).toEqual(
       expect.objectContaining({
-        patterns: expect.arrayContaining([
-          expect.objectContaining({ urlPattern: "https://ads.example.com/*" }),
+        urlPatterns: expect.arrayContaining([
+          expect.objectContaining({ type: "pattern", pattern: "https://ads.example.com/*" }),
         ]),
       })
     );
 
     // Simulate a matching request being paused
-    await cdp._emitAsync("network.beforeRequestSent", {
-      requestId: "req-ad-1",
-      request: {
-        url: "https://ads.example.com/banner.js",
-        method: "GET",
-      },
-    });
+    await cdp._emitAsync("network.beforeRequestSent", { request: { request: "req-ad-1", url: "https://ads.example.com/banner.js" }, isBlocked: true });
 
     // Should fail (abort) the request
     const failCalls = cdp._getCalls("network.failRequest");
     expect(failCalls).toHaveLength(1);
     expect(failCalls[0].params).toEqual(
-      expect.objectContaining({ requestId: "req-ad-1" })
+      expect.objectContaining({ request: "req-ad-1" })
     );
   });
 
@@ -3662,21 +3602,12 @@ describe("browser_abort", () => {
       url: "https://tracker.example.com/*",
     });
 
-    await cdp._emitAsync("network.beforeRequestSent", {
-      requestId: "req-tracker-1",
-      request: {
-        url: "https://tracker.example.com/pixel.gif",
-        method: "GET",
-      },
-    });
+    await cdp._emitAsync("network.beforeRequestSent", { request: { request: "req-tracker-1", url: "https://tracker.example.com/pixel.gif" }, isBlocked: true });
 
     const failCalls = cdp._getCalls("network.failRequest");
     expect(failCalls).toHaveLength(1);
     expect(failCalls[0].params).toEqual(
-      expect.objectContaining({
-        requestId: "req-tracker-1",
-        reason: "BlockedByClient",
-      })
+      expect.objectContaining({ request: "req-tracker-1" })
     );
   });
 
@@ -3692,26 +3623,20 @@ describe("browser_abort", () => {
     expect(enableCalls).toHaveLength(1);
     expect(enableCalls[0].params).toEqual(
       expect.objectContaining({
-        patterns: expect.arrayContaining([
-          expect.objectContaining({ urlPattern: "**/analytics/**" }),
+        urlPatterns: expect.arrayContaining([
+          expect.objectContaining({ type: "pattern", pattern: "**/analytics/**" }),
         ]),
       })
     );
 
     // Simulate a matching request
-    await cdp._emitAsync("network.beforeRequestSent", {
-      requestId: "req-analytics",
-      request: {
-        url: "https://example.com/analytics/event",
-        method: "POST",
-      },
-    });
+    await cdp._emitAsync("network.beforeRequestSent", { request: { request: "req-analytics", url: "https://example.com/analytics/event" }, isBlocked: true });
 
     const failCalls = cdp._getCalls("network.failRequest");
     expect(failCalls).toHaveLength(1);
     expect(failCalls[0].params).toEqual(
       expect.objectContaining({
-        requestId: "req-analytics",
+        request: "req-analytics",
         reason: "BlockedByClient",
       })
     );
@@ -3730,30 +3655,18 @@ describe("browser_abort", () => {
     });
 
     // Simulate matching requests for both patterns
-    await cdp._emitAsync("network.beforeRequestSent", {
-      requestId: "req-ad",
-      request: {
-        url: "https://ads.example.com/banner.js",
-        method: "GET",
-      },
-    });
+    await cdp._emitAsync("network.beforeRequestSent", { request: { request: "req-ad", url: "https://ads.example.com/banner.js" }, isBlocked: true });
 
-    await cdp._emitAsync("network.beforeRequestSent", {
-      requestId: "req-tracker",
-      request: {
-        url: "https://tracker.example.com/pixel.gif",
-        method: "GET",
-      },
-    });
+    await cdp._emitAsync("network.beforeRequestSent", { request: { request: "req-tracker", url: "https://tracker.example.com/pixel.gif" }, isBlocked: true });
 
     const failCalls = cdp._getCalls("network.failRequest");
     expect(failCalls).toHaveLength(2);
 
     const adFail = failCalls.find(
-      (c) => (c.params as any).requestId === "req-ad"
+      (c) => (c.params as any).request === "req-ad"
     );
     const trackerFail = failCalls.find(
-      (c) => (c.params as any).requestId === "req-tracker"
+      (c) => (c.params as any).request === "req-tracker"
     );
     expect(adFail).toBeDefined();
     expect(trackerFail).toBeDefined();
@@ -3769,13 +3682,7 @@ describe("browser_abort", () => {
     });
 
     // Simulate a NON-matching request
-    await cdp._emitAsync("network.beforeRequestSent", {
-      requestId: "req-legit",
-      request: {
-        url: "https://api.example.com/data",
-        method: "GET",
-      },
-    });
+    await cdp._emitAsync("network.beforeRequestSent", { request: { request: "req-legit", url: "https://api.example.com/data" }, isBlocked: true });
 
     // Should NOT fail this request
     const failCalls = cdp._getCalls("network.failRequest");
@@ -3785,7 +3692,7 @@ describe("browser_abort", () => {
     const continueCalls = cdp._getCalls("network.continueRequest");
     expect(continueCalls).toHaveLength(1);
     expect(continueCalls[0].params).toEqual(
-      expect.objectContaining({ requestId: "req-legit" })
+      expect.objectContaining({ request: "req-legit" })
     );
   });
 });
@@ -3826,13 +3733,7 @@ describe("browser_unroute", () => {
     cdp._calls.length = 0;
 
     // Simulate a request that previously would have been intercepted
-    await cdp._emitAsync("network.beforeRequestSent", {
-      requestId: "req-after-unroute",
-      request: {
-        url: "https://api.example.com/users",
-        method: "GET",
-      },
-    });
+    await cdp._emitAsync("network.beforeRequestSent", { request: { request: "req-after-unroute", url: "https://api.example.com/users" }, isBlocked: true });
 
     // Should NOT fulfill — the route was removed
     const fulfillCalls = cdp._getCalls("network.provideResponse");
@@ -3862,13 +3763,7 @@ describe("browser_unroute", () => {
     cdp._calls.length = 0;
 
     // Simulate a request that previously would have been blocked
-    await cdp._emitAsync("network.beforeRequestSent", {
-      requestId: "req-after-unabort",
-      request: {
-        url: "https://ads.example.com/banner.js",
-        method: "GET",
-      },
-    });
+    await cdp._emitAsync("network.beforeRequestSent", { request: { request: "req-after-unabort", url: "https://ads.example.com/banner.js" }, isBlocked: true });
 
     // Should NOT fail — the abort was removed
     const failCalls = cdp._getCalls("network.failRequest");
