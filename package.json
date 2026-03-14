@@ -1,0 +1,61 @@
+{
+  "name": "browsirai",
+  "version": "0.2.0",
+  "description": "Live browser plugin for AI coding agents. Connect to your running Chrome session via CDP.",
+  "author": "Mert Koseoglu",
+  "license": "BSL-1.1",
+  "homepage": "https://github.com/mksglu/browsir.ai#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mksglu/browsir.ai.git"
+  },
+  "bugs": {
+    "url": "https://github.com/mksglu/browsir.ai/issues"
+  },
+  "type": "module",
+  "bin": {
+    "browsirai": "./dist/bin.js"
+  },
+  "main": "./dist/server.js",
+  "files": [
+    "dist",
+    "skills"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "vitest",
+    "test:run": "vitest run",
+    "lint": "tsc --noEmit",
+    "prepublishOnly": "npm run build"
+  },
+  "dependencies": {
+    "@clack/prompts": "^1.1.0",
+    "@modelcontextprotocol/sdk": "^1.12.1",
+    "picocolors": "^1.1.1",
+    "ws": "^8.19.0",
+    "zod": "^3.24.4"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.0",
+    "@types/ws": "^8.18.1",
+    "jest-extended": "^7.0.0",
+    "tsup": "^8.5.0",
+    "typescript": "^5.8.3",
+    "vitest": "^3.1.4"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "keywords": [
+    "browser",
+    "cdp",
+    "chrome",
+    "devtools",
+    "mcp",
+    "ai-agent",
+    "claude-code",
+    "cursor",
+    "gemini-cli"
+  ]
+}
