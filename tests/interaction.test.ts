@@ -311,118 +311,55 @@ describe("browser_navigate_back", () => {
   });
 
   it("should go back in navigation history", async () => {
-    cdp._setResponse("script.evaluate", {
-      currentIndex: 2,
-      entries: [
-        { id: 0, url: "https://example.com/page1", title: "Page 1" },
-        { id: 1, url: "https://example.com/page2", title: "Page 2" },
-        { id: 2, url: "https://example.com/page3", title: "Page 3" },
-      ],
-    });
     cdp._setResponse("browsingContext.traverseHistory", {});
+    cdp._setResponse("script.evaluate", { result: { value: "https://example.com/page2" } });
 
-    const result = await browserNavigateBack(cdp as never, {
-      direction: "back",
-    });
+    const result = await browserNavigateBack(cdp as never, { direction: "back" });
 
     expect(result.success).toBe(true);
     expect(result.url).toBe("https://example.com/page2");
 
     const historyCalls = cdp._getCalls("browsingContext.traverseHistory");
     expect(historyCalls).toHaveLength(1);
-    expect(historyCalls[0].params).toEqual(
-      expect.objectContaining({ entryId: 1 })
-    );
+    expect(historyCalls[0].params).toEqual(expect.objectContaining({ delta: -1 }));
   });
 
   it("should go forward in navigation history", async () => {
-    cdp._setResponse("script.evaluate", {
-      currentIndex: 0,
-      entries: [
-        { id: 0, url: "https://example.com/page1", title: "Page 1" },
-        { id: 1, url: "https://example.com/page2", title: "Page 2" },
-      ],
-    });
     cdp._setResponse("browsingContext.traverseHistory", {});
-    cdp._setResponse("script.evaluate", (params: unknown) => {
-      const p = params as { expression: string };
-      if (p.expression.includes("location.href")) {
-        return {
-          result: {
-            type: "string",
-            value: "https://example.com/page2",
-          },
-        };
-      }
-      return { result: { type: "string", value: "Page 2" } };
-    });
+    cdp._setResponse("script.evaluate", { result: { value: "https://example.com/page2" } });
 
-    const result = await browserNavigateBack(cdp as never, {
-      direction: "forward",
-    });
+    const result = await browserNavigateBack(cdp as never, { direction: "forward" });
 
     expect(result.url).toBe("https://example.com/page2");
 
     const historyCalls = cdp._getCalls("browsingContext.traverseHistory");
     expect(historyCalls).toHaveLength(1);
-    expect(historyCalls[0].params).toEqual(
-      expect.objectContaining({ entryId: 1 })
-    );
+    expect(historyCalls[0].params).toEqual(expect.objectContaining({ delta: 1 }));
   });
 
   it("should handle empty history (no page to go back to)", async () => {
-    cdp._setResponse("script.evaluate", {
-      currentIndex: 0,
-      entries: [
-        { id: 0, url: "https://example.com/only-page", title: "Only Page" },
-      ],
-    });
+    cdp._setResponse("browsingContext.traverseHistory", () => { throw new Error("no history"); });
 
     const result = await browserNavigateBack(cdp as never, { direction: "back" });
     expect(result.success).toBe(false);
-    expect(result.url).toBe("https://example.com/only-page");
   });
 
   it("should handle empty forward history", async () => {
-    cdp._setResponse("script.evaluate", {
-      currentIndex: 1,
-      entries: [
-        { id: 0, url: "https://example.com/page1", title: "Page 1" },
-        { id: 1, url: "https://example.com/page2", title: "Page 2" },
-      ],
-    });
+    cdp._setResponse("browsingContext.traverseHistory", () => { throw new Error("no forward history"); });
 
     const result = await browserNavigateBack(cdp as never, { direction: "forward" });
     expect(result.success).toBe(false);
-    expect(result.url).toBe("https://example.com/page2");
   });
 
   it("should default to going back when no direction is specified", async () => {
-    cdp._setResponse("script.evaluate", {
-      currentIndex: 1,
-      entries: [
-        { id: 0, url: "https://example.com/page1", title: "Page 1" },
-        { id: 1, url: "https://example.com/page2", title: "Page 2" },
-      ],
-    });
     cdp._setResponse("browsingContext.traverseHistory", {});
-    cdp._setResponse("script.evaluate", (params: unknown) => {
-      const p = params as { expression: string };
-      if (p.expression.includes("location.href")) {
-        return {
-          result: { type: "string", value: "https://example.com/page1" },
-        };
-      }
-      return { result: { type: "string", value: "Page 1" } };
-    });
+    cdp._setResponse("script.evaluate", { result: { value: "https://example.com/page1" } });
 
     const result = await browserNavigateBack(cdp as never, {});
 
     expect(result.url).toBe("https://example.com/page1");
     const historyCalls = cdp._getCalls("browsingContext.traverseHistory");
-    expect(historyCalls[0].params).toEqual(
-      expect.objectContaining({ entryId: 0 })
-    );
+    expect(historyCalls[0].params).toEqual(expect.objectContaining({ delta: -1 }));
   });
 });
 
@@ -458,23 +395,30 @@ describe("browser_click", () => {
   });
 
   it("should click by @eN ref", async () => {
-    const result = await browserClick(cdp as never, {
-      ref: "@e5",
-      element: "Submit button",
+    // Mock element resolution and bounding rect
+    cdp._setResponse("script.evaluate", (p: unknown) => {
+      const params = p as { expression?: string };
+      const expr = params?.expression ?? "";
+      if (expr.includes("getBoundingClientRect")) {
+        return { result: { value: JSON.stringify({ x: 100, y: 100, width: 100, height: 100 }) } };
+      }
+      return { result: { value: undefined } };
     });
+
+    const result = await browserClick(cdp as never, { ref: "@e5" });
 
     expect(result.success).toBe(true);
 
-    // Should dispatch mouseMoved, mousePressed, mouseReleased
-    const mouseEvents = cdp._getCalls("input.performActions");
-    expect(mouseEvents.length).toBeGreaterThanOrEqual(3);
+    // BiDi sends a single input.performActions with pointer actions array
+    const actionCalls = cdp._getCalls("input.performActions");
+    expect(actionCalls.length).toBeGreaterThanOrEqual(1);
 
-    const types = mouseEvents.map(
-      (c) => (c.params as { type: string }).type
-    );
-    expect(types).toContain("mouseMoved");
-    expect(types).toContain("mousePressed");
-    expect(types).toContain("mouseReleased");
+    const actions = (actionCalls[0].params as { actions: Array<{ actions: Array<{ type: string }> }> }).actions;
+    const pointerActions = actions[0].actions;
+    const types = pointerActions.map(a => a.type);
+    expect(types).toContain("pointerMove");
+    expect(types).toContain("pointerDown");
+    expect(types).toContain("pointerUp");
   });
 
   it("should click by CSS selector", async () => {
