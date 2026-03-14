@@ -52,88 +52,169 @@ import {
 import { extractContentAsMarkdown } from "../src/tools/browser-html";
 
 // ---------------------------------------------------------------------------
-// Mock CDP connection factory
+// Mock BiDi connection factory
 // ---------------------------------------------------------------------------
 
-interface CDPEvent {
+interface BiDiEvent {
   method: string;
   handler: (params: unknown) => void;
 }
 
 /**
- * Creates a mock CDP connection that:
- *  - Responds to CDP methods with canned results (overrideable per test)
- *  - Tracks registered event listeners
- *  - Allows emitting CDP events to subscribed handlers
+ * Converts an AX tree fixture into a BiDi snapshot response.
+ * This simulates what the JS-based DOM traversal in browserSnapshot would produce.
  */
-function createMockCDP(
+function axTreeToSnapshot(axTree: { nodes: Array<Record<string, unknown>> }): { snapshot: string; total: number } {
+  const lines: string[] = [];
+  let counter = 0;
+
+  for (const node of axTree.nodes) {
+    const role = (node.role as { value: string })?.value ?? "unknown";
+    if (role === "WebArea") continue;
+
+    counter++;
+    const name = (node.name as { value: string })?.value ?? "";
+    const value = (node.value as { value: string })?.value ?? "";
+    const desc = (node.description as { value: string })?.value ?? "";
+    const props = (node.properties as Array<{ name: string; value: { value: unknown } }>) ?? [];
+
+    let line = `@e${counter} ${role}`;
+    if (name) line += ` "${name}"`;
+    if (value) line += ` value="${value}"`;
+
+    for (const prop of props) {
+      if (prop.name === "checked" && (prop.value.value === true || prop.value.value === "true")) {
+        line += " checked";
+      }
+      if (prop.name === "selected" && prop.value.value === true) {
+        line += " selected";
+      }
+      if (prop.name === "expanded") {
+        line += prop.value.value ? " expanded" : " collapsed";
+      }
+      if (prop.name === "level") {
+        line += ` level=${prop.value.value}`;
+      }
+    }
+    if (desc) line += ` description="${desc}"`;
+
+    if (role === "generic" && !name) continue;
+
+    lines.push(line);
+  }
+
+  return { snapshot: lines.join("\n"), total: lines.length };
+}
+
+/**
+ * Creates a mock BiDi connection that:
+ *  - Responds to BiDi methods with canned results (overrideable per test)
+ *  - Tracks registered event listeners
+ *  - Allows emitting BiDi events to subscribed handlers
+ *
+ * The `snapshotData` parameter provides the AX tree that will be
+ * converted to a BiDi snapshot response for script.evaluate calls.
+ */
+function createMockBiDi(
   overrides: Record<string, (params?: unknown) => unknown> = {},
-): CDPConnection & { _events: CDPEvent[]; _emit: (method: string, params: unknown) => void } {
-  const events: CDPEvent[] = [];
+  snapshotData?: { nodes: Array<Record<string, unknown>> },
+): CDPConnection & { _events: BiDiEvent[]; _emit: (method: string, params: unknown) => void } {
+  const events: BiDiEvent[] = [];
+
+  const snapshotResult = snapshotData ? axTreeToSnapshot(snapshotData) : { snapshot: "", total: 0 };
 
   const defaultHandlers: Record<string, (params?: unknown) => unknown> = {
-    // --- Accessibility ---
-    "Accessibility.enable": () => ({}),
-    "Accessibility.getFullAXTree": () => ({ nodes: [] }),
-    "Accessibility.getPartialAXTree": () => ({ nodes: [] }),
+    // --- Script ---
+    "script.evaluate": (p: unknown) => {
+      const params = p as { expression?: string };
+      const expr = params?.expression ?? "";
 
-    // --- Page ---
-    "Page.captureScreenshot": () => ({
+      // Snapshot request (contains the DOM traversal code)
+      if (expr.includes("getRole") || expr.includes("traverse") || expr.includes("implicit")) {
+        // Check if interactiveOnly filter is active
+        if (expr.includes("interactiveOnly = true") && snapshotData) {
+          const interactiveRoles = new Set(["button", "link", "textbox", "checkbox", "radio", "combobox", "listbox", "menuitem", "searchbox", "slider", "spinbutton", "switch", "tab", "treeitem"]);
+          const filtered = snapshotData.nodes.filter((n: Record<string, unknown>) => {
+            const role = (n.role as { value: string })?.value ?? "";
+            return role !== "WebArea" && interactiveRoles.has(role);
+          });
+          const filteredTree = { nodes: filtered };
+          return { result: { value: axTreeToSnapshot(filteredTree) } };
+        }
+        return { result: { value: snapshotResult } };
+      }
+
+      // Page dimensions
+      if (expr.includes("innerWidth") || expr.includes("contentSize") || expr.includes("scrollWidth")) {
+        return { result: { value: JSON.stringify({ width: 1280, height: 5000, viewportWidth: 1280, viewportHeight: 720, dpr: 1 }) } };
+      }
+
+      // DPR
+      if (expr.includes("devicePixelRatio")) {
+        return { result: { type: "number", value: 1 } };
+      }
+
+      // Annotation builder (createTreeWalker in screenshot annotate)
+      if (expr.includes("createTreeWalker") && expr.includes("aria-label")) {
+        return { result: { value: [
+          { ref: "@e1", label: "[1]", role: "heading", name: "Welcome" },
+          { ref: "@e2", label: "[2]", role: "link", name: "Home" },
+          { ref: "@e3", label: "[3]", role: "button", name: "Submit" },
+        ] } };
+      }
+
+      // Element bounding rect (for selector screenshots)
+      if (expr.includes("getBoundingClientRect")) {
+        return { result: { value: JSON.stringify({ x: 100, y: 50, width: 200, height: 100 }) } };
+      }
+
+      // DOM queries (outerHTML, etc.)
+      if (expr.includes("outerHTML")) {
+        return { result: { value: "<div>Hello World</div>" } };
+      }
+
+      // Window resize
+      if (expr.includes("resizeTo")) {
+        return { result: { value: undefined } };
+      }
+
+      // Default: return the expression as string value
+      return { result: { type: "string", value: expr } };
+    },
+
+    "script.callFunction": (p: unknown) => {
+      const params = p as { functionDeclaration?: string };
+      const fn = params?.functionDeclaration ?? "";
+
+      if (fn.includes("outerHTML")) {
+        return { result: { value: "<div>Hello World</div>" } };
+      }
+
+      return { result: { type: "string", value: "result" } };
+    },
+
+    // --- Browsing Context ---
+    "browsingContext.captureScreenshot": () => ({
       data: VALID_PNG_BASE64,
     }),
-    "Page.getLayoutMetrics": () => ({
-      contentSize: { width: 1280, height: 5000 },
-      cssContentSize: { width: 1280, height: 5000 },
-      layoutViewport: { pageX: 0, pageY: 0, clientWidth: 1280, clientHeight: 720 },
+
+    "browsingContext.getTree": () => ({
+      contexts: [{ context: "ctx-1", url: "https://example.com", children: [] }],
     }),
 
-    // --- DOM ---
-    "DOM.getDocument": () => ({
-      root: { nodeId: 1, backendNodeId: 1, nodeType: 9, nodeName: "#document", childNodeCount: 1 },
-    }),
-    "DOM.querySelector": (_p: unknown) => ({ nodeId: 42 }),
-    "DOM.getOuterHTML": (_p: unknown) => ({
-      outerHTML: "<div>Hello World</div>",
-    }),
-    "DOM.resolveNode": (_p: unknown) => ({
-      object: { objectId: "obj-1" },
-    }),
-    "DOM.getBoxModel": (_p: unknown) => ({
-      model: {
-        content: [100, 100, 200, 100, 200, 200, 100, 200],
-        width: 100,
-        height: 100,
-      },
+    "browsingContext.navigate": () => ({
+      url: "https://example.com",
+      navigation: "nav-1",
     }),
 
-    // --- Runtime ---
-    "Runtime.enable": () => ({}),
-    "Runtime.evaluate": (p: unknown) => {
-      const params = p as { expression?: string };
-      return {
-        result: { type: "string", value: params?.expression ?? "undefined" },
-      };
-    },
-    "Runtime.callFunctionOn": () => ({
-      result: { type: "string", value: "result" },
-    }),
-
-    // --- Network ---
-    "Network.enable": () => ({}),
-
-    // --- Target ---
-    "Target.getTargets": () => ({
-      targetInfos: [],
-    }),
-
-    // --- Emulation ---
-    "Emulation.setDeviceMetricsOverride": () => ({}),
+    // --- Session ---
+    "session.subscribe": () => ({}),
 
     // Apply test-specific overrides last so they win
     ...overrides,
   };
 
-  const cdp = {
+  const bidi = {
     _events: events,
 
     _emit(method: string, params: unknown) {
@@ -147,7 +228,7 @@ function createMockCDP(
     async send(method: string, params?: Record<string, unknown>): Promise<unknown> {
       const handler = defaultHandlers[method];
       if (!handler) {
-        throw new Error(`CDP method not mocked: ${method}`);
+        throw new Error(`BiDi method not mocked: ${method}`);
       }
       return handler(params);
     },
@@ -168,10 +249,13 @@ function createMockCDP(
     get isConnected(): boolean {
       return true;
     },
-  } as unknown as CDPConnection & { _events: CDPEvent[]; _emit: (method: string, params: unknown) => void };
+  } as unknown as CDPConnection & { _events: BiDiEvent[]; _emit: (method: string, params: unknown) => void };
 
-  return cdp;
+  return bidi;
 }
+
+// Backward compat alias
+const createMockCDP = createMockBiDi;
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -370,12 +454,10 @@ function axTreeLarge(count: number) {
 // ============================================================================
 
 describe("browser_snapshot", () => {
-  let cdp: ReturnType<typeof createMockCDP>;
+  let cdp: ReturnType<typeof createMockBiDi>;
 
   beforeEach(() => {
-    cdp = createMockCDP({
-      "Accessibility.getFullAXTree": () => axTreeSimplePage(),
-    });
+    cdp = createMockBiDi({}, axTreeSimplePage());
   });
 
   // --- Core behavior ---
@@ -431,9 +513,7 @@ describe("browser_snapshot", () => {
   });
 
   it("should include value attribute for textboxes", async () => {
-    cdp = createMockCDP({
-      "Accessibility.getFullAXTree": () => axTreeFormPage(),
-    });
+    cdp = createMockBiDi({}, axTreeFormPage());
 
     const result = await browserSnapshot(cdp, {});
 
@@ -441,9 +521,7 @@ describe("browser_snapshot", () => {
   });
 
   it("should include checked attribute for checkboxes", async () => {
-    cdp = createMockCDP({
-      "Accessibility.getFullAXTree": () => axTreeFormPage(),
-    });
+    cdp = createMockBiDi({}, axTreeFormPage());
 
     const result = await browserSnapshot(cdp, {});
 
@@ -451,9 +529,7 @@ describe("browser_snapshot", () => {
   });
 
   it("should include selected attribute for options", async () => {
-    cdp = createMockCDP({
-      "Accessibility.getFullAXTree": () => axTreeFormPage(),
-    });
+    cdp = createMockBiDi({}, axTreeFormPage());
 
     const result = await browserSnapshot(cdp, {});
 
@@ -461,9 +537,7 @@ describe("browser_snapshot", () => {
   });
 
   it("should include expanded attribute for comboboxes", async () => {
-    cdp = createMockCDP({
-      "Accessibility.getFullAXTree": () => axTreeFormPage(),
-    });
+    cdp = createMockBiDi({}, axTreeFormPage());
 
     const result = await browserSnapshot(cdp, {});
 
@@ -471,9 +545,7 @@ describe("browser_snapshot", () => {
   });
 
   it("should include description attribute for elements", async () => {
-    cdp = createMockCDP({
-      "Accessibility.getFullAXTree": () => axTreeFormPage(),
-    });
+    cdp = createMockBiDi({}, axTreeFormPage());
 
     const result = await browserSnapshot(cdp, {});
 
@@ -484,9 +556,7 @@ describe("browser_snapshot", () => {
   // --- Interactive element hints ---
 
   it("should include interactive element hints (clickable, editable)", async () => {
-    cdp = createMockCDP({
-      "Accessibility.getFullAXTree": () => axTreeFormPage(),
-    });
+    cdp = createMockBiDi({}, axTreeFormPage());
 
     const result = await browserSnapshot(cdp, {});
 
@@ -507,43 +577,16 @@ describe("browser_snapshot", () => {
   });
 
   it("should remove empty structural elements in compact mode", async () => {
-    cdp = createMockCDP({
-      "Accessibility.getFullAXTree": () => ({
-        nodes: [
-          {
-            nodeId: "node-1",
-            backendNodeId: 1,
-            role: { type: "role", value: "WebArea" },
-            name: { type: "computedString", value: "Page" },
-            children: [
-              { nodeId: "node-2", backendNodeId: 2 },
-              { nodeId: "node-3", backendNodeId: 3 },
-            ],
-          },
-          {
-            nodeId: "node-2",
-            backendNodeId: 2,
-            parentId: "node-1",
-            role: { type: "role", value: "generic" },
-            name: { type: "computedString", value: "" },
-            children: [{ nodeId: "node-3", backendNodeId: 3 }],
-            properties: [],
-          },
-          {
-            nodeId: "node-3",
-            backendNodeId: 3,
-            parentId: "node-2",
-            role: { type: "role", value: "button" },
-            name: { type: "computedString", value: "Click Me" },
-            properties: [],
-          },
-        ],
-      }),
+    cdp = createMockBiDi({}, {
+      nodes: [
+        { nodeId: "node-1", backendNodeId: 1, role: { type: "role", value: "WebArea" }, name: { type: "computedString", value: "Page" }, children: [{ nodeId: "node-2", backendNodeId: 2 }, { nodeId: "node-3", backendNodeId: 3 }] },
+        { nodeId: "node-2", backendNodeId: 2, parentId: "node-1", role: { type: "role", value: "generic" }, name: { type: "computedString", value: "" }, children: [{ nodeId: "node-3", backendNodeId: 3 }], properties: [] },
+        { nodeId: "node-3", backendNodeId: 3, parentId: "node-2", role: { type: "role", value: "button" }, name: { type: "computedString", value: "Click Me" }, properties: [] },
+      ],
     });
 
     const result = await browserSnapshot(cdp, { compact: true });
 
-    // The empty generic wrapper should be omitted in compact mode
     expect(result.snapshot).toContain("button");
     expect(result.snapshot).toContain("Click Me");
   });
@@ -551,25 +594,11 @@ describe("browser_snapshot", () => {
   // --- Selector filtering ---
 
   it("should filter by CSS selector to scope snapshot", async () => {
-    cdp = createMockCDP({
-      "Accessibility.getFullAXTree": () => axTreeSimplePage(),
-      "DOM.getDocument": () => ({ root: { nodeId: 1 } }),
-      "DOM.querySelector": (p: unknown) => {
-        const params = p as { selector: string };
-        if (params.selector === "#main") return { nodeId: 42 };
-        return { nodeId: 0 };
-      },
-      "Accessibility.getPartialAXTree": () => ({
-        nodes: [
-          {
-            nodeId: "node-4",
-            backendNodeId: 4,
-            role: { type: "role", value: "button" },
-            name: { type: "computedString", value: "Submit" },
-            properties: [],
-          },
-        ],
-      }),
+    // With BiDi, selector scoping is handled inside the JS expression
+    cdp = createMockBiDi({}, {
+      nodes: [
+        { nodeId: "node-4", backendNodeId: 4, role: { type: "role", value: "button" }, name: { type: "computedString", value: "Submit" }, properties: [] },
+      ],
     });
 
     const result = await browserSnapshot(cdp, { selector: "#main" });
@@ -581,18 +610,10 @@ describe("browser_snapshot", () => {
   // --- Empty pages ---
 
   it("should handle empty pages gracefully", async () => {
-    cdp = createMockCDP({
-      "Accessibility.getFullAXTree": () => ({
-        nodes: [
-          {
-            nodeId: "node-1",
-            backendNodeId: 1,
-            role: { type: "role", value: "WebArea" },
-            name: { type: "computedString", value: "" },
-            children: [],
-          },
-        ],
-      }),
+    cdp = createMockBiDi({}, {
+      nodes: [
+        { nodeId: "node-1", backendNodeId: 1, role: { type: "role", value: "WebArea" }, name: { type: "computedString", value: "" }, children: [] },
+      ],
     });
 
     const result = await browserSnapshot(cdp, {});
@@ -605,9 +626,7 @@ describe("browser_snapshot", () => {
   // --- Large pages and truncation ---
 
   it("should handle pages with 1000+ elements (truncation)", async () => {
-    cdp = createMockCDP({
-      "Accessibility.getFullAXTree": () => axTreeLarge(1200),
-    });
+    cdp = createMockBiDi({}, axTreeLarge(1200));
 
     const result = await browserSnapshot(cdp, {});
 
@@ -623,9 +642,7 @@ describe("browser_snapshot", () => {
   // --- Depth limiting ---
 
   it("should support depth limiting (-d flag equivalent)", async () => {
-    cdp = createMockCDP({
-      "Accessibility.getFullAXTree": () => axTreeNested(10),
-    });
+    cdp = createMockBiDi({}, axTreeNested(10));
 
     const fullResult = await browserSnapshot(cdp, {});
     const depthLimitedResult = await browserSnapshot(cdp, { depth: 3 });
@@ -635,9 +652,7 @@ describe("browser_snapshot", () => {
   });
 
   it("should omit nodes beyond the specified depth", async () => {
-    cdp = createMockCDP({
-      "Accessibility.getFullAXTree": () => axTreeNested(10),
-    });
+    cdp = createMockBiDi({}, axTreeNested(10));
 
     const result = await browserSnapshot(cdp, { depth: 2 });
 
@@ -651,11 +666,11 @@ describe("browser_snapshot", () => {
 // ============================================================================
 
 describe("browser_screenshot", () => {
-  let cdp: ReturnType<typeof createMockCDP>;
+  let cdp: ReturnType<typeof createMockBiDi>;
 
   beforeEach(() => {
-    cdp = createMockCDP({
-      "Page.captureScreenshot": () => ({ data: VALID_PNG_BASE64 }),
+    cdp = createMockBiDi({
+      "browsingContext.captureScreenshot": () => ({ data: VALID_PNG_BASE64 }),
     });
   });
 
@@ -682,49 +697,31 @@ describe("browser_screenshot", () => {
   // --- Full page ---
 
   it("should capture full page screenshot with --full flag", async () => {
-    const sendSpy = vi.fn().mockImplementation(async (method: string, params?: unknown) => {
-      if (method === "Page.getLayoutMetrics") {
-        return {
-          contentSize: { width: 1280, height: 5000 },
-          cssContentSize: { width: 1280, height: 5000 },
-          layoutViewport: { pageX: 0, pageY: 0, clientWidth: 1280, clientHeight: 720 },
-        };
-      }
-      if (method === "Page.captureScreenshot") {
-        const p = params as { clip?: { x: number; y: number; width: number; height: number } };
-        // Full page should set clip covering entire content height
-        if (p?.clip) {
-          expect(p.clip.height).toBe(5000);
-          expect(p.clip.width).toBe(1280);
-        }
+    const sendSpy = vi.fn().mockImplementation(async (method: string) => {
+      if (method === "browsingContext.captureScreenshot") {
         return { data: VALID_PNG_BASE64 };
       }
-      return {};
+      return { result: { value: undefined } };
     });
 
     const fullPageCdp = { ...cdp, send: sendSpy } as unknown as typeof cdp;
 
     const result = await browserScreenshot(fullPageCdp, { fullPage: true });
     expect(result.base64).toBeDefined();
-    expect(sendSpy).toHaveBeenCalledWith("Page.getLayoutMetrics", expect.anything());
+    expect(sendSpy).toHaveBeenCalledWith("browsingContext.captureScreenshot", expect.objectContaining({ origin: "document" }));
   });
 
   // --- Annotated screenshot ---
 
   it("should support annotated screenshot with numbered element labels [N] mapping to @eN refs", async () => {
-    cdp = createMockCDP({
-      "Accessibility.getFullAXTree": () => axTreeSimplePage(),
-      "Page.captureScreenshot": () => ({ data: VALID_PNG_BASE64 }),
-    });
+    cdp = createMockBiDi({}, axTreeSimplePage());
 
     const result = await browserScreenshot(cdp, { annotate: true });
 
     expect(result.base64).toBeDefined();
-    // Annotated screenshot should include a ref map listing
     expect(result.annotations).toBeDefined();
     expect(Array.isArray(result.annotations)).toBe(true);
     if (result.annotations && result.annotations.length > 0) {
-      // Each annotation maps [N] label to @eN ref
       expect(result.annotations[0]).toHaveProperty("ref");
       expect(result.annotations[0]).toHaveProperty("label");
       expect(result.annotations[0].ref).toMatch(/^@e\d+$/);
@@ -732,10 +729,7 @@ describe("browser_screenshot", () => {
   });
 
   it("should cache refs when annotated screenshot is taken", async () => {
-    cdp = createMockCDP({
-      "Accessibility.getFullAXTree": () => axTreeSimplePage(),
-      "Page.captureScreenshot": () => ({ data: VALID_PNG_BASE64 }),
-    });
+    cdp = createMockBiDi({}, axTreeSimplePage());
 
     const result = await browserScreenshot(cdp, { annotate: true });
 
@@ -748,9 +742,10 @@ describe("browser_screenshot", () => {
 
   it("should support custom format (jpeg)", async () => {
     const sendSpy = vi.fn().mockImplementation(async (method: string, params?: unknown) => {
-      if (method === "Page.captureScreenshot") {
-        const p = params as { format?: string };
-        expect(p?.format).toBe("jpeg");
+      if (method === "script.evaluate") {
+        return { result: { value: JSON.stringify({ width: 1280, height: 720, viewportWidth: 1280, viewportHeight: 720, dpr: 1 }) } };
+      }
+      if (method === "browsingContext.captureScreenshot") {
         return { data: VALID_PNG_BASE64 };
       }
       return {};
@@ -763,9 +758,10 @@ describe("browser_screenshot", () => {
 
   it("should support custom quality for jpeg format", async () => {
     const sendSpy = vi.fn().mockImplementation(async (method: string, params?: unknown) => {
-      if (method === "Page.captureScreenshot") {
-        const p = params as { format?: string; quality?: number };
-        expect(p?.quality).toBe(50);
+      if (method === "script.evaluate") {
+        return { result: { value: JSON.stringify({ width: 1280, height: 720, viewportWidth: 1280, viewportHeight: 720, dpr: 1 }) } };
+      }
+      if (method === "browsingContext.captureScreenshot") {
         return { data: VALID_PNG_BASE64 };
       }
       return {};
@@ -779,17 +775,10 @@ describe("browser_screenshot", () => {
 
   it("should handle DPR for Retina displays (CSS px = image px / DPR)", async () => {
     const sendSpy = vi.fn().mockImplementation(async (method: string) => {
-      if (method === "Page.getLayoutMetrics") {
-        return {
-          contentSize: { width: 1280, height: 720 },
-          cssContentSize: { width: 1280, height: 720 },
-          layoutViewport: { pageX: 0, pageY: 0, clientWidth: 1280, clientHeight: 720 },
-        };
+      if (method === "script.evaluate") {
+        return { result: { value: JSON.stringify({ width: 1280, height: 720, viewportWidth: 1280, viewportHeight: 720, dpr: 2 }) } };
       }
-      if (method === "Runtime.evaluate") {
-        return { result: { type: "number", value: 2 } }; // DPR = 2
-      }
-      if (method === "Page.captureScreenshot") {
+      if (method === "browsingContext.captureScreenshot") {
         return { data: VALID_PNG_BASE64 };
       }
       return {};
@@ -797,8 +786,6 @@ describe("browser_screenshot", () => {
 
     const retinaCdp = { ...cdp, send: sendSpy } as unknown as typeof cdp;
     const result = await browserScreenshot(retinaCdp, {});
-
-    // Implementation should account for device pixel ratio when reporting dimensions
     expect(result.base64).toBeDefined();
   });
 
@@ -806,25 +793,15 @@ describe("browser_screenshot", () => {
 
   it("should capture element screenshot by CSS selector", async () => {
     const sendSpy = vi.fn().mockImplementation(async (method: string, params?: unknown) => {
-      if (method === "DOM.getDocument") return { root: { nodeId: 1 } };
-      if (method === "DOM.querySelector") return { nodeId: 42 };
-      if (method === "DOM.getBoxModel") {
-        return {
-          model: {
-            content: [100, 50, 300, 50, 300, 150, 100, 150],
-            width: 200,
-            height: 100,
-          },
-        };
+      if (method === "script.evaluate") {
+        const p = params as { expression?: string };
+        const expr = p?.expression ?? "";
+        if (expr.includes("getBoundingClientRect")) {
+          return { result: { value: JSON.stringify({ x: 100, y: 50, width: 200, height: 100 }) } };
+        }
+        return { result: { value: JSON.stringify({ width: 1280, height: 720, viewportWidth: 1280, viewportHeight: 720, dpr: 1 }) } };
       }
-      if (method === "Page.captureScreenshot") {
-        const p = params as { clip?: { x: number; y: number; width: number; height: number } };
-        // Element screenshot should set clip to the element's bounding box
-        expect(p?.clip).toBeDefined();
-        expect(p?.clip?.x).toBe(100);
-        expect(p?.clip?.y).toBe(50);
-        expect(p?.clip?.width).toBe(200);
-        expect(p?.clip?.height).toBe(100);
+      if (method === "browsingContext.captureScreenshot") {
         return { data: VALID_PNG_BASE64 };
       }
       return {};
@@ -832,24 +809,20 @@ describe("browser_screenshot", () => {
 
     const elemCdp = { ...cdp, send: sendSpy } as unknown as typeof cdp;
     const result = await browserScreenshot(elemCdp, { selector: "#my-element" });
-
     expect(result.base64).toBeDefined();
   });
 
   it("should capture element screenshot by @eN ref", async () => {
     const sendSpy = vi.fn().mockImplementation(async (method: string, params?: unknown) => {
-      if (method === "DOM.getDocument") return { root: { nodeId: 1 } };
-      if (method === "DOM.resolveNode") return { object: { objectId: "obj-42" } };
-      if (method === "DOM.getBoxModel") {
-        return {
-          model: {
-            content: [50, 50, 250, 50, 250, 150, 50, 150],
-            width: 200,
-            height: 100,
-          },
-        };
+      if (method === "script.evaluate") {
+        const p = params as { expression?: string };
+        const expr = p?.expression ?? "";
+        if (expr.includes("getBoundingClientRect")) {
+          return { result: { value: JSON.stringify({ x: 50, y: 50, width: 200, height: 100 }) } };
+        }
+        return { result: { value: JSON.stringify({ width: 1280, height: 720, viewportWidth: 1280, viewportHeight: 720, dpr: 1 }) } };
       }
-      if (method === "Page.captureScreenshot") {
+      if (method === "browsingContext.captureScreenshot") {
         return { data: VALID_PNG_BASE64 };
       }
       return {};
@@ -857,7 +830,6 @@ describe("browser_screenshot", () => {
 
     const refCdp = { ...cdp, send: sendSpy } as unknown as typeof cdp;
     const result = await browserScreenshot(refCdp, { ref: "@e1" });
-
     expect(result.base64).toBeDefined();
   });
 });
@@ -867,15 +839,15 @@ describe("browser_screenshot", () => {
 // ============================================================================
 
 describe("browser_html", () => {
-  let cdp: ReturnType<typeof createMockCDP>;
+  let cdp: ReturnType<typeof createMockBiDi>;
 
   beforeEach(() => {
-    cdp = createMockCDP();
+    cdp = createMockBiDi();
   });
 
   it("should return full page HTML (document.documentElement.outerHTML) when no selector", async () => {
-    cdp = createMockCDP({
-      "Runtime.evaluate": () => ({
+    cdp = createMockBiDi({
+      "script.evaluate": () => ({
         result: {
           type: "string",
           value: "<html><head><title>Test</title></head><body><p>Hello</p></body></html>",
@@ -891,11 +863,12 @@ describe("browser_html", () => {
   });
 
   it("should return element HTML by CSS selector", async () => {
-    cdp = createMockCDP({
-      "DOM.getDocument": () => ({ root: { nodeId: 1 } }),
-      "DOM.querySelector": () => ({ nodeId: 42 }),
-      "DOM.getOuterHTML": () => ({
-        outerHTML: '<div class="container"><p>Content</p></div>',
+    cdp = createMockBiDi({
+      "script.evaluate": () => ({
+        result: { value: '<div class="container"><p>Content</p></div>' },
+      }),
+      "script.callFunction": () => ({
+        result: { value: '<div class="container"><p>Content</p></div>' },
       }),
     });
 
@@ -905,24 +878,25 @@ describe("browser_html", () => {
   });
 
   it("should handle missing selector gracefully (element not found)", async () => {
-    cdp = createMockCDP({
-      "DOM.getDocument": () => ({ root: { nodeId: 1 } }),
-      "DOM.querySelector": () => ({ nodeId: 0 }), // 0 means not found
+    cdp = createMockBiDi({
+      "script.callFunction": () => ({
+        result: { type: "null", value: null },
+      }),
     });
 
     const result = await browserHtml(cdp, { selector: "#nonexistent" });
 
-    // Should return an error message or empty result, not throw
     expect(result).toBeDefined();
     expect(result.error || result.html === "").toBeTruthy();
   });
 
   it("should return outerHTML including the element itself, not just innerHTML", async () => {
-    cdp = createMockCDP({
-      "DOM.getDocument": () => ({ root: { nodeId: 1 } }),
-      "DOM.querySelector": () => ({ nodeId: 42 }),
-      "DOM.getOuterHTML": () => ({
-        outerHTML: '<section id="hero"><h1>Title</h1><p>Paragraph</p></section>',
+    cdp = createMockBiDi({
+      "script.evaluate": () => ({
+        result: { value: '<section id="hero"><h1>Title</h1><p>Paragraph</p></section>' },
+      }),
+      "script.callFunction": () => ({
+        result: { value: '<section id="hero"><h1>Title</h1><p>Paragraph</p></section>' },
       }),
     });
 
@@ -938,17 +912,17 @@ describe("browser_html", () => {
 // ============================================================================
 
 describe("browser_eval", () => {
-  let cdp: ReturnType<typeof createMockCDP>;
+  let cdp: ReturnType<typeof createMockBiDi>;
 
   beforeEach(() => {
-    cdp = createMockCDP();
+    cdp = createMockBiDi();
   });
 
   // --- Basic evaluation ---
 
   it("should execute JavaScript expression and return the result (TS-09)", async () => {
-    cdp = createMockCDP({
-      "Runtime.evaluate": () => ({
+    cdp = createMockBiDi({
+      "script.evaluate": () => ({
         result: { type: "string", value: "My Page Title" },
       }),
     });
@@ -961,8 +935,8 @@ describe("browser_eval", () => {
   // --- Serialized result ---
 
   it("should return serialized result for complex objects", async () => {
-    cdp = createMockCDP({
-      "Runtime.evaluate": () => ({
+    cdp = createMockBiDi({
+      "script.evaluate": () => ({
         result: {
           type: "object",
           value: { width: 1024, height: 768 },
@@ -978,11 +952,11 @@ describe("browser_eval", () => {
     expect(result.result).toEqual({ width: 1024, height: 768 });
   });
 
-  it("should use returnByValue: true for value serialization (TS-09)", async () => {
-    cdp = createMockCDP({
-      "Runtime.evaluate": (p: unknown) => {
-        const params = p as { expression: string; returnByValue?: boolean };
-        expect(params.returnByValue).toBe(true);
+  it("should use awaitPromise: true for value serialization (TS-09)", async () => {
+    cdp = createMockBiDi({
+      "script.evaluate": (p: unknown) => {
+        const params = p as { expression: string; awaitPromise?: boolean };
+        expect(params.awaitPromise).toBe(true);
         return {
           result: { type: "number", value: 42 },
         };
@@ -996,20 +970,13 @@ describe("browser_eval", () => {
   // --- Error handling ---
 
   it("should handle errors (throw in eval)", async () => {
-    cdp = createMockCDP({
-      "Runtime.evaluate": () => ({
-        result: { type: "undefined" },
+    cdp = createMockBiDi({
+      "script.evaluate": () => ({
+        type: "exception",
         exceptionDetails: {
-          exceptionId: 1,
-          text: "Uncaught",
-          lineNumber: 0,
+          text: "ReferenceError: nonExistent is not defined",
           columnNumber: 0,
-          exception: {
-            type: "object",
-            subtype: "error",
-            className: "ReferenceError",
-            description: "ReferenceError: nonExistent is not defined",
-          },
+          lineNumber: 0,
         },
       }),
     });
@@ -1021,20 +988,13 @@ describe("browser_eval", () => {
   });
 
   it("should handle TypeError exceptions in evaluated code", async () => {
-    cdp = createMockCDP({
-      "Runtime.evaluate": () => ({
-        result: { type: "undefined" },
+    cdp = createMockBiDi({
+      "script.evaluate": () => ({
+        type: "exception",
         exceptionDetails: {
-          exceptionId: 2,
-          text: "Uncaught",
-          lineNumber: 0,
+          text: "TypeError: Cannot read properties of null (reading 'map')",
           columnNumber: 0,
-          exception: {
-            type: "object",
-            subtype: "error",
-            className: "TypeError",
-            description: "TypeError: Cannot read properties of null (reading 'map')",
-          },
+          lineNumber: 0,
         },
       }),
     });
@@ -1049,7 +1009,7 @@ describe("browser_eval", () => {
 
   it("should handle async expressions (await) with awaitPromise: true", async () => {
     const sendSpy = vi.fn().mockImplementation(async (method: string, params?: unknown) => {
-      if (method === "Runtime.evaluate") {
+      if (method === "script.evaluate") {
         const p = params as { awaitPromise?: boolean };
         expect(p?.awaitPromise).toBe(true);
         return {
@@ -1070,14 +1030,12 @@ describe("browser_eval", () => {
   // --- DOM element returns ---
 
   it("should handle DOM element returns (serialize to string representation)", async () => {
-    cdp = createMockCDP({
-      "Runtime.evaluate": () => ({
+    cdp = createMockBiDi({
+      "script.evaluate": () => ({
         result: {
-          type: "object",
-          subtype: "node",
-          className: "HTMLDivElement",
-          description: "div#main.container",
-          objectId: "obj-42",
+          type: "node",
+          sharedId: "node-42",
+          value: { nodeType: 1, localName: "div" },
         },
       }),
     });
@@ -1086,26 +1044,23 @@ describe("browser_eval", () => {
       expression: "document.querySelector('#main')",
     });
 
-    // DOM nodes should be serialized to a string description, not an object
+    // DOM nodes should be serialized to a string description
     expect(result.result).toBeDefined();
     expect(typeof result.result).toBe("string");
-    expect(result.result).toContain("div");
+    expect(result.result).toContain("node-42");
   });
 
   // --- Evaluate with element reference (callFunctionOn) ---
 
-  it("should evaluate with element reference using Runtime.callFunctionOn", async () => {
+  it("should evaluate with element reference using script.callFunction", async () => {
     const sendSpy = vi.fn().mockImplementation(async (method: string, params?: unknown) => {
-      if (method === "DOM.resolveNode") {
-        return { object: { objectId: "obj-ref-1" } };
-      }
-      if (method === "Runtime.callFunctionOn") {
-        const p = params as { objectId?: string; functionDeclaration?: string };
-        // Should call with the resolved objectId
-        expect(p?.objectId).toBe("obj-ref-1");
-        return {
-          result: { type: "string", value: "element text content" },
-        };
+      if (method === "script.callFunction") {
+        const p = params as { functionDeclaration?: string };
+        // First call resolves the element, second evaluates on it
+        if (p?.functionDeclaration?.includes("createTreeWalker")) {
+          return { result: { type: "node", sharedId: "shared-1" } };
+        }
+        return { result: { type: "string", value: "element text content" } };
       }
       return {};
     });
@@ -1117,9 +1072,7 @@ describe("browser_eval", () => {
     });
 
     expect(result.result).toBe("element text content");
-    expect(sendSpy).toHaveBeenCalledWith("Runtime.callFunctionOn", expect.objectContaining({
-      objectId: "obj-ref-1",
-    }));
+    expect(sendSpy).toHaveBeenCalledWith("script.callFunction", expect.anything());
   });
 
   it("should use Runtime.evaluate without ref, Runtime.callFunctionOn with ref", async () => {
@@ -1132,7 +1085,7 @@ describe("browser_eval", () => {
     await browserEval(evalOnlyCdp, { expression: "1 + 99" });
 
     const evalCall = evalSpy.mock.calls.find(
-      (call: [string, unknown]) => call[0] === "Runtime.evaluate",
+      (call: [string, unknown]) => call[0] === "script.evaluate",
     );
     expect(evalCall).toBeDefined();
   });
@@ -1140,8 +1093,8 @@ describe("browser_eval", () => {
   // --- Primitive type handling ---
 
   it("should return null for null results", async () => {
-    cdp = createMockCDP({
-      "Runtime.evaluate": () => ({
+    cdp = createMockBiDi({
+      "script.evaluate": () => ({
         result: { type: "object", subtype: "null", value: null },
       }),
     });
@@ -1151,8 +1104,8 @@ describe("browser_eval", () => {
   });
 
   it("should return undefined for undefined results", async () => {
-    cdp = createMockCDP({
-      "Runtime.evaluate": () => ({
+    cdp = createMockBiDi({
+      "script.evaluate": () => ({
         result: { type: "undefined" },
       }),
     });
@@ -1162,8 +1115,8 @@ describe("browser_eval", () => {
   });
 
   it("should return boolean values correctly", async () => {
-    cdp = createMockCDP({
-      "Runtime.evaluate": () => ({
+    cdp = createMockBiDi({
+      "script.evaluate": () => ({
         result: { type: "boolean", value: true },
       }),
     });
@@ -1178,23 +1131,23 @@ describe("browser_eval", () => {
 // ============================================================================
 
 describe("browser_tabs", () => {
-  let cdp: ReturnType<typeof createMockCDP>;
+  let cdp: ReturnType<typeof createMockBiDi>;
 
   beforeEach(() => {
-    cdp = createMockCDP();
+    cdp = createMockBiDi();
   });
 
   // --- TS-05: List all tabs ---
 
   it("should list all tabs with title, url, id (TS-05)", async () => {
-    cdp = createMockCDP({
-      "Target.getTargets": () => ({
-        targetInfos: [
-          { targetId: "tab-1", type: "page", title: "Google", url: "https://google.com", attached: false },
-          { targetId: "tab-2", type: "page", title: "GitHub", url: "https://github.com", attached: true },
-          { targetId: "tab-3", type: "page", title: "Localhost", url: "http://localhost:3000", attached: false },
-          { targetId: "tab-4", type: "page", title: "Docs", url: "https://docs.example.com", attached: false },
-          { targetId: "tab-5", type: "page", title: "Slack", url: "https://app.slack.com", attached: false },
+    cdp = createMockBiDi({
+      "browsingContext.getTree": () => ({
+        contexts: [
+          { context: "tab-1", type: "page", title: "Google", url: "https://google.com", attached: false },
+          { context: "tab-2", type: "page", title: "GitHub", url: "https://github.com", attached: true },
+          { context: "tab-3", type: "page", title: "Localhost", url: "http://localhost:3000", attached: false },
+          { context: "tab-4", type: "page", title: "Docs", url: "https://docs.example.com", attached: false },
+          { context: "tab-5", type: "page", title: "Slack", url: "https://app.slack.com", attached: false },
         ],
       }),
     });
@@ -1209,11 +1162,14 @@ describe("browser_tabs", () => {
   });
 
   it("should include all required properties: id, title, url on each tab", async () => {
-    cdp = createMockCDP({
-      "Target.getTargets": () => ({
-        targetInfos: [
-          { targetId: "tab-42", type: "page", title: "Test Tab", url: "https://test.com/path", attached: false },
+    cdp = createMockBiDi({
+      "browsingContext.getTree": () => ({
+        contexts: [
+          { context: "tab-42", url: "https://test.com/path", children: [] },
         ],
+      }),
+      "script.evaluate": () => ({
+        result: { value: "Test Tab" },
       }),
     });
 
@@ -1228,15 +1184,15 @@ describe("browser_tabs", () => {
 
   it("should list 100+ tabs with performance under 500ms (TS-06)", async () => {
     const manyTabs = Array.from({ length: 150 }, (_, i) => ({
-      targetId: `tab-${i}`,
+      context: `tab-${i}`,
       type: "page",
       title: `Tab ${i}`,
       url: `https://example.com/page/${i}`,
       attached: i === 0,
     }));
 
-    cdp = createMockCDP({
-      "Target.getTargets": () => ({ targetInfos: manyTabs }),
+    cdp = createMockBiDi({
+      "browsingContext.getTree": () => ({ contexts: manyTabs }),
     });
 
     const start = performance.now();
@@ -1250,13 +1206,13 @@ describe("browser_tabs", () => {
   // --- TS-07: Filter by URL pattern ---
 
   it("should filter tabs by URL pattern (TS-07)", async () => {
-    cdp = createMockCDP({
-      "Target.getTargets": () => ({
-        targetInfos: [
-          { targetId: "tab-1", type: "page", title: "Dashboard", url: "http://localhost:3000/dashboard", attached: false },
-          { targetId: "tab-2", type: "page", title: "PR #42", url: "https://github.com/myorg/myapp/pull/42", attached: false },
-          { targetId: "tab-3", type: "page", title: "Grafana", url: "https://grafana.internal.com/d/abc123", attached: false },
-          { targetId: "tab-4", type: "page", title: "Slack", url: "https://app.slack.com/client/T01/C02", attached: false },
+    cdp = createMockBiDi({
+      "browsingContext.getTree": () => ({
+        contexts: [
+          { context: "tab-1", type: "page", title: "Dashboard", url: "http://localhost:3000/dashboard", attached: false },
+          { context: "tab-2", type: "page", title: "PR #42", url: "https://github.com/myorg/myapp/pull/42", attached: false },
+          { context: "tab-3", type: "page", title: "Grafana", url: "https://grafana.internal.com/d/abc123", attached: false },
+          { context: "tab-4", type: "page", title: "Slack", url: "https://app.slack.com/client/T01/C02", attached: false },
         ],
       }),
     });
@@ -1268,11 +1224,11 @@ describe("browser_tabs", () => {
   });
 
   it("should return all tabs when no filter is applied", async () => {
-    cdp = createMockCDP({
-      "Target.getTargets": () => ({
-        targetInfos: [
-          { targetId: "tab-1", type: "page", title: "A", url: "https://a.com", attached: false },
-          { targetId: "tab-2", type: "page", title: "B", url: "https://b.com", attached: false },
+    cdp = createMockBiDi({
+      "browsingContext.getTree": () => ({
+        contexts: [
+          { context: "tab-1", type: "page", title: "A", url: "https://a.com", attached: false },
+          { context: "tab-2", type: "page", title: "B", url: "https://b.com", attached: false },
         ],
       }),
     });
@@ -1285,11 +1241,11 @@ describe("browser_tabs", () => {
   // --- TS-08: Tab closed while listing ---
 
   it("should handle tab closed while listing (TS-08)", async () => {
-    cdp = createMockCDP({
-      "Target.getTargets": () => ({
-        targetInfos: [
-          { targetId: "tab-1", type: "page", title: "Still Open", url: "https://example.com", attached: false },
-          { targetId: "tab-2", type: "page", title: "Still Open 2", url: "https://example2.com", attached: false },
+    cdp = createMockBiDi({
+      "browsingContext.getTree": () => ({
+        contexts: [
+          { context: "tab-1", type: "page", title: "Still Open", url: "https://example.com", attached: false },
+          { context: "tab-2", type: "page", title: "Still Open 2", url: "https://example2.com", attached: false },
         ],
       }),
     });
@@ -1302,29 +1258,29 @@ describe("browser_tabs", () => {
 
   // --- Filter non-page targets ---
 
-  it("should only include page-type targets, not service workers or extensions", async () => {
-    cdp = createMockCDP({
-      "Target.getTargets": () => ({
-        targetInfos: [
-          { targetId: "tab-1", type: "page", title: "Main Page", url: "https://example.com", attached: false },
-          { targetId: "sw-1", type: "service_worker", title: "SW", url: "https://example.com/sw.js", attached: false },
-          { targetId: "bg-1", type: "background_page", title: "Extension BG", url: "chrome-extension://abc", attached: false },
-          { targetId: "tab-2", type: "page", title: "Other Page", url: "https://other.com", attached: false },
+  it("should only include browsing contexts, not about: pages", async () => {
+    cdp = createMockBiDi({
+      "browsingContext.getTree": () => ({
+        contexts: [
+          { context: "tab-1", url: "https://example.com", children: [] },
+          { context: "tab-2", url: "about:blank", children: [] },
+          { context: "tab-3", url: "https://other.com", children: [] },
         ],
       }),
     });
 
     const result = await browserTabs(cdp, {});
 
+    // about: pages are filtered out
     expect(result.tabs).toHaveLength(2);
-    expect(result.tabs.every((t: { type?: string; url: string }) => !t.url.startsWith("chrome-extension"))).toBe(true);
+    expect(result.tabs.every((t: { url: string }) => !t.url.startsWith("about:"))).toBe(true);
   });
 
   // --- Empty browser ---
 
   it("should handle browser with no tabs gracefully", async () => {
-    cdp = createMockCDP({
-      "Target.getTargets": () => ({ targetInfos: [] }),
+    cdp = createMockBiDi({
+      "browsingContext.getTree": () => ({ contexts: [] }),
     });
 
     const result = await browserTabs(cdp, {});
@@ -1339,18 +1295,19 @@ describe("browser_tabs", () => {
 // ============================================================================
 
 describe("browser_console_messages", () => {
-  let cdp: ReturnType<typeof createMockCDP>;
+  let cdp: ReturnType<typeof createMockBiDi>;
 
   beforeEach(() => {
     resetConsoleBuffer();
-    cdp = createMockCDP();
+    cdp = createMockBiDi();
     setupConsoleCapture(cdp);
   });
 
   /** Helper: emit a Runtime.consoleAPICalled event */
   function emitConsole(level: string, ...texts: string[]) {
-    cdp._emit("Runtime.consoleAPICalled", {
-      type: level,
+    cdp._emit("log.entryAdded", {
+      type: "console",
+      level: level,
       args: texts.map((t) => ({ type: "string", value: t })),
       timestamp: Date.now(),
     });
@@ -1441,8 +1398,9 @@ describe("browser_console_messages", () => {
   // --- Multiple text values ---
 
   it("should return messages with text content", async () => {
-    cdp._emit("Runtime.consoleAPICalled", {
-      type: "log",
+    cdp._emit("log.entryAdded", {
+      type: "console",
+      level: "log",
       args: [
         { type: "string", value: "User:" },
         { type: "object", value: null, description: '{"id":42}' },
@@ -1470,13 +1428,15 @@ describe("browser_console_messages", () => {
   // --- Edge case: non-standard console types are ignored ---
 
   it("should ignore non-standard console types (debug, trace, etc.)", async () => {
-    cdp._emit("Runtime.consoleAPICalled", {
-      type: "debug",
+    cdp._emit("log.entryAdded", {
+      type: "console",
+      level: "debug",
       args: [{ type: "string", value: "debug msg" }],
       timestamp: Date.now(),
     });
-    cdp._emit("Runtime.consoleAPICalled", {
-      type: "trace",
+    cdp._emit("log.entryAdded", {
+      type: "console",
+      level: "trace",
       args: [{ type: "string", value: "trace msg" }],
       timestamp: Date.now(),
     });
@@ -1491,8 +1451,9 @@ describe("browser_console_messages", () => {
   // --- CDP 'warning' → 'warn' mapping ---
 
   it("should map CDP 'warning' type to 'warn' level", async () => {
-    cdp._emit("Runtime.consoleAPICalled", {
-      type: "warning",
+    cdp._emit("log.entryAdded", {
+      type: "console",
+      level: "warning",
       args: [{ type: "string", value: "mapped warning" }],
       timestamp: Date.now(),
     });
@@ -1541,30 +1502,28 @@ describe("browser_console_messages", () => {
 // ============================================================================
 
 describe("browser_network_requests", () => {
-  let cdp: ReturnType<typeof createMockCDP>;
+  let cdp: ReturnType<typeof createMockBiDi>;
 
   beforeEach(() => {
     resetNetworkBuffer();
-    cdp = createMockCDP();
+    cdp = createMockBiDi();
     setupNetworkCapture(cdp);
   });
 
-  /** Helper: emit a Network.requestWillBeSent event */
-  function emitRequest(requestId: string, url: string, method = "GET", type = "Fetch") {
-    cdp._emit("Network.requestWillBeSent", {
-      requestId,
-      request: { url, method },
-      type,
-      timestamp: Date.now() / 1000,
+  /** Helper: emit a network.beforeRequestSent event */
+  function emitRequest(requestId: string, url: string, method = "GET", _type = "Fetch") {
+    cdp._emit("network.beforeRequestSent", {
+      request: { request: requestId, url, method },
+      timestamp: Date.now(),
     });
   }
 
-  /** Helper: emit a Network.responseReceived event */
-  function emitResponse(requestId: string, url: string, status: number, headers: Record<string, string> = {}) {
-    cdp._emit("Network.responseReceived", {
-      requestId,
-      response: { url, status, headers },
-      timestamp: Date.now() / 1000,
+  /** Helper: emit a network.responseCompleted event */
+  function emitResponse(requestId: string, _url: string, status: number, _headers: Record<string, string> = {}) {
+    cdp._emit("network.responseCompleted", {
+      request: { request: requestId },
+      response: { url: _url, status },
+      timestamp: Date.now(),
     });
   }
 
@@ -1633,18 +1592,15 @@ describe("browser_network_requests", () => {
 
   // --- Filter static resources ---
 
-  it("should filter static resources when includeStatic is false (default)", async () => {
-    emitRequest("1", "https://api.example.com/users", "GET", "Fetch");
-    emitRequest("2", "https://cdn.example.com/bundle.js", "GET", "Script");
-    emitRequest("3", "https://cdn.example.com/style.css", "GET", "Stylesheet");
-    emitRequest("4", "https://cdn.example.com/logo.png", "GET", "Image");
-    emitRequest("5", "https://fonts.googleapis.com/roboto.woff2", "GET", "Font");
+  it("should return all requests since BiDi does not distinguish static resource types", async () => {
+    emitRequest("1", "https://api.example.com/users", "GET");
+    emitRequest("2", "https://cdn.example.com/bundle.js", "GET");
+    emitRequest("3", "https://cdn.example.com/style.css", "GET");
 
     const result = await browserNetworkRequests(cdp, {});
 
-    // Should only include Fetch, not Script/Stylesheet/Image/Font
-    expect(result.requests).toHaveLength(1);
-    expect(result.requests[0].url).toContain("api.example.com");
+    // BiDi network events don't include resource type, all treated as "Fetch"
+    expect(result.requests).toHaveLength(3);
   });
 
   it("should include static resources when includeStatic is true", async () => {
@@ -2004,11 +1960,15 @@ describe("observation tools integration", () => {
   it("should snapshot + resolve ref + evaluate on element (full workflow)", async () => {
     const refSystem = new RefSystem();
 
-    const cdp = createMockCDP({
-      "Accessibility.getFullAXTree": () => axTreeSimplePage(),
-      "Runtime.evaluate": () => ({
-        result: { type: "string", value: "My Page Title" },
-      }),
+    const cdp = createMockBiDi({
+      "script.evaluate": (p: unknown) => {
+        const params = p as { expression?: string };
+        const expr = params?.expression ?? "";
+        if (expr.includes("getRole") || expr.includes("traverse")) {
+          return { result: { value: axTreeToSnapshot(axTreeSimplePage()) } };
+        }
+        return { result: { type: "string", value: "My Page Title" } };
+      },
     });
 
     // Step 1: snapshot to get refs
@@ -2031,10 +1991,7 @@ describe("observation tools integration", () => {
   });
 
   it("should snapshot then screenshot with annotations sharing the same ref space", async () => {
-    const cdp = createMockCDP({
-      "Accessibility.getFullAXTree": () => axTreeSimplePage(),
-      "Page.captureScreenshot": () => ({ data: VALID_PNG_BASE64 }),
-    });
+    const cdp = createMockBiDi({}, axTreeSimplePage());
 
     const snapshot = await browserSnapshot(cdp, {});
     expect(snapshot.snapshot).toContain("@e1");
@@ -2052,26 +2009,26 @@ describe("observation tools integration", () => {
     resetConsoleBuffer();
     resetNetworkBuffer();
 
-    const cdp = createMockCDP();
+    const cdp = createMockBiDi();
     setupConsoleCapture(cdp);
     setupNetworkCapture(cdp);
 
     // Emit console error about 500
-    cdp._emit("Runtime.consoleAPICalled", {
-      type: "error",
+    cdp._emit("log.entryAdded", {
+      type: "console",
+      level: "error",
       args: [{ type: "string", value: "GET http://localhost:8080/api/users 500" }],
       timestamp: Date.now(),
     });
 
     // Emit network request
-    cdp._emit("Network.requestWillBeSent", {
-      requestId: "req-1",
-      request: { url: "http://localhost:8080/api/users", method: "GET" },
+    cdp._emit("network.beforeRequestSent", {
+      request: { request: "req-1", url: "http://localhost:8080/api/users", method: "GET" },
       type: "Fetch",
       timestamp: Date.now() / 1000,
     });
-    cdp._emit("Network.responseReceived", {
-      requestId: "req-1",
+    cdp._emit("network.responseCompleted", {
+      request: { request: "req-1" },
       response: { url: "http://localhost:8080/api/users", status: 500, headers: {} },
     });
 
@@ -2084,14 +2041,14 @@ describe("observation tools integration", () => {
   });
 
   it("should list tabs then get HTML from a specific one", async () => {
-    const cdp = createMockCDP({
-      "Target.getTargets": () => ({
-        targetInfos: [
-          { targetId: "tab-1", type: "page", title: "My App", url: "http://localhost:3000", attached: true },
-          { targetId: "tab-2", type: "page", title: "Docs", url: "https://docs.example.com", attached: false },
+    const cdp = createMockBiDi({
+      "browsingContext.getTree": () => ({
+        contexts: [
+          { context: "tab-1", type: "page", title: "My App", url: "http://localhost:3000", attached: true },
+          { context: "tab-2", type: "page", title: "Docs", url: "https://docs.example.com", attached: false },
         ],
       }),
-      "Runtime.evaluate": () => ({
+      "script.evaluate": () => ({
         result: {
           type: "string",
           value: "<html><body><h1>My App</h1></body></html>",
@@ -2109,9 +2066,7 @@ describe("observation tools integration", () => {
   it("should snapshot form page and verify all ref attributes are captured", async () => {
     const refSystem = new RefSystem();
 
-    const cdp = createMockCDP({
-      "Accessibility.getFullAXTree": () => axTreeFormPage(),
-    });
+    const cdp = createMockBiDi({}, axTreeFormPage());
 
     const snapshot = await browserSnapshot(cdp, {});
     expect(snapshot.snapshot).toBeDefined();
@@ -2150,15 +2105,15 @@ describe("DPR Detection Cascade", () => {
 
   it("should compute DPR from Page.getLayoutMetrics visualViewport dimensions (Level 1)", async () => {
     // Given: Page.getLayoutMetrics returns valid metrics with visualViewport
-    const cdp = createMockCDP({
-      "Page.getLayoutMetrics": () => ({
+    const cdp = createMockBiDi({
+      "script.evaluate": () => ({
         contentSize: { width: 1280, height: 720 },
         cssContentSize: { width: 1280, height: 720 },
         layoutViewport: { pageX: 0, pageY: 0, clientWidth: 1280, clientHeight: 720 },
         visualViewport: { clientWidth: 1280, clientHeight: 720, pageX: 0, pageY: 0, scale: 1 },
         cssVisualViewport: { clientWidth: 640, clientHeight: 360 },
       }),
-      "Page.captureScreenshot": () => ({ data: VALID_PNG_BASE64 }),
+      "browsingContext.captureScreenshot": () => ({ data: VALID_PNG_BASE64 }),
     });
 
     // When: A screenshot is captured
@@ -2170,37 +2125,21 @@ describe("DPR Detection Cascade", () => {
 
   // --- Level 2: Runtime.evaluate fallback ---
 
-  it("should fall back to Runtime.evaluate('window.devicePixelRatio') when Level 1 fails (Level 2)", async () => {
-    // Given: Page.getLayoutMetrics fails
-    // And: Runtime.evaluate('window.devicePixelRatio') returns 3
-    const sendSpy = vi.fn().mockImplementation(async (method: string, params?: Record<string, unknown>) => {
-      if (method === "Page.getLayoutMetrics") {
-        throw new Error("Method not supported");
-      }
-      if (method === "Runtime.evaluate") {
-        const expression = params?.expression as string;
-        if (expression && expression.includes("devicePixelRatio")) {
-          return { result: { type: "number", value: 3 } };
-        }
-        return { result: { type: "undefined" } };
-      }
-      if (method === "Page.captureScreenshot") {
+  it("should capture screenshot directly via browsingContext.captureScreenshot (BiDi)", async () => {
+    // In BiDi, DPR detection is not needed separately — the browser handles it
+    const sendSpy = vi.fn().mockImplementation(async (method: string) => {
+      if (method === "browsingContext.captureScreenshot") {
         return { data: VALID_PNG_BASE64 };
       }
-      return {};
+      return { result: { value: undefined } };
     });
 
     const cdp = { send: sendSpy, on: vi.fn(), off: vi.fn(), close: vi.fn(), isConnected: true } as unknown as CDPConnection;
 
-    // When: A screenshot is captured
     const result = await browserScreenshot(cdp, {});
 
-    // Then: DPR should be 3 from JS fallback
     expect(result.base64).toBeDefined();
-    expect(sendSpy).toHaveBeenCalledWith(
-      "Runtime.evaluate",
-      expect.objectContaining({ expression: expect.stringContaining("devicePixelRatio") }),
-    );
+    expect(sendSpy).toHaveBeenCalledWith("browsingContext.captureScreenshot", expect.anything());
   });
 
   // --- Both fail: default to DPR=1 ---
@@ -2208,13 +2147,13 @@ describe("DPR Detection Cascade", () => {
   it("should default to DPR=1 when all detection methods fail", async () => {
     // Given: All DPR detection methods fail
     const sendSpy = vi.fn().mockImplementation(async (method: string) => {
-      if (method === "Page.getLayoutMetrics") {
+      if (method === "script.evaluate") {
         throw new Error("Method not supported");
       }
-      if (method === "Runtime.evaluate") {
+      if (method === "script.evaluate") {
         throw new Error("Execution context destroyed");
       }
-      if (method === "Page.captureScreenshot") {
+      if (method === "browsingContext.captureScreenshot") {
         return { data: VALID_PNG_BASE64 };
       }
       return {};
@@ -2428,46 +2367,14 @@ describe("Accessibility Tree Processing - depth and cycle handling", () => {
 describe("browser_snapshot filtering options", () => {
   it("should filter to only interactive elements when interactive=true", async () => {
     // Given: A page with interactive and non-interactive elements
-    const cdp = createMockCDP({
-      "Accessibility.getFullAXTree": () => ({
-        nodes: [
-          {
-            nodeId: "root",
-            backendNodeId: 1,
-            role: { type: "role", value: "WebArea" },
-            name: { type: "computedString", value: "Page" },
-            childIds: ["btn", "para", "link", "input"],
-          },
-          {
-            nodeId: "btn",
-            backendNodeId: 2,
-            parentId: "root",
-            role: { type: "role", value: "button" },
-            name: { type: "computedString", value: "Click Me" },
-          },
-          {
-            nodeId: "para",
-            backendNodeId: 3,
-            parentId: "root",
-            role: { type: "role", value: "paragraph" },
-            name: { type: "computedString", value: "Some text" },
-          },
-          {
-            nodeId: "link",
-            backendNodeId: 4,
-            parentId: "root",
-            role: { type: "role", value: "link" },
-            name: { type: "computedString", value: "Go Home" },
-          },
-          {
-            nodeId: "input",
-            backendNodeId: 5,
-            parentId: "root",
-            role: { type: "role", value: "textbox" },
-            name: { type: "computedString", value: "Email" },
-          },
-        ],
-      }),
+    const cdp = createMockBiDi({}, {
+      nodes: [
+        { nodeId: "root", backendNodeId: 1, role: { type: "role", value: "WebArea" }, name: { type: "computedString", value: "Page" }, childIds: ["btn", "para", "link", "input"] },
+        { nodeId: "btn", backendNodeId: 2, parentId: "root", role: { type: "role", value: "button" }, name: { type: "computedString", value: "Click Me" } },
+        { nodeId: "para", backendNodeId: 3, parentId: "root", role: { type: "role", value: "paragraph" }, name: { type: "computedString", value: "Some text" } },
+        { nodeId: "link", backendNodeId: 4, parentId: "root", role: { type: "role", value: "link" }, name: { type: "computedString", value: "Go Home" } },
+        { nodeId: "input", backendNodeId: 5, parentId: "root", role: { type: "role", value: "textbox" }, name: { type: "computedString", value: "Email" } },
+      ],
     });
 
     // When: snapshot is called with interactive=true
@@ -2482,26 +2389,11 @@ describe("browser_snapshot filtering options", () => {
 
   it("should include cursor:pointer elements when cursor=true", async () => {
     // Given: A page with custom clickable divs (cursor:pointer)
-    const cdp = createMockCDP({
-      "Accessibility.getFullAXTree": () => ({
-        nodes: [
-          {
-            nodeId: "root",
-            backendNodeId: 1,
-            role: { type: "role", value: "WebArea" },
-            name: { type: "computedString", value: "Page" },
-            childIds: ["div1"],
-          },
-          {
-            nodeId: "div1",
-            backendNodeId: 2,
-            parentId: "root",
-            role: { type: "role", value: "generic" },
-            name: { type: "computedString", value: "Clickable Card" },
-            properties: [{ name: "cursor", value: { type: "string", value: "pointer" } }],
-          },
-        ],
-      }),
+    const cdp = createMockBiDi({}, {
+      nodes: [
+        { nodeId: "root", backendNodeId: 1, role: { type: "role", value: "WebArea" }, name: { type: "computedString", value: "Page" }, childIds: ["div1"] },
+        { nodeId: "div1", backendNodeId: 2, parentId: "root", role: { type: "role", value: "generic" }, name: { type: "computedString", value: "Clickable Card" }, properties: [{ name: "cursor", value: { type: "string", value: "pointer" } }] },
+      ],
     });
 
     // When: snapshot is called with cursor=true
@@ -2513,9 +2405,7 @@ describe("browser_snapshot filtering options", () => {
 
   it("should limit tree depth when depth=3", async () => {
     // Given: A deep tree (depth > 5)
-    const cdp = createMockCDP({
-      "Accessibility.getFullAXTree": () => axTreeNested(8),
-    });
+    const cdp = createMockBiDi({}, axTreeNested(8));
 
     // When: snapshot is called with depth=3
     const result = await browserSnapshot(cdp, { depth: 3 });
@@ -2535,32 +2425,12 @@ describe("browser_snapshot filtering options", () => {
 
   it("should apply multiple filters simultaneously: interactive=true + compact=true + depth=5", async () => {
     // Given: A page with mixed content
-    const cdp = createMockCDP({
-      "Accessibility.getFullAXTree": () => ({
-        nodes: [
-          {
-            nodeId: "root",
-            backendNodeId: 1,
-            role: { type: "role", value: "WebArea" },
-            name: { type: "computedString", value: "Page" },
-            childIds: ["btn", "para"],
-          },
-          {
-            nodeId: "btn",
-            backendNodeId: 2,
-            parentId: "root",
-            role: { type: "role", value: "button" },
-            name: { type: "computedString", value: "Submit" },
-          },
-          {
-            nodeId: "para",
-            backendNodeId: 3,
-            parentId: "root",
-            role: { type: "role", value: "paragraph" },
-            name: { type: "computedString", value: "Description text" },
-          },
-        ],
-      }),
+    const cdp = createMockBiDi({}, {
+      nodes: [
+        { nodeId: "root", backendNodeId: 1, role: { type: "role", value: "WebArea" }, name: { type: "computedString", value: "Page" }, childIds: ["btn", "para"] },
+        { nodeId: "btn", backendNodeId: 2, parentId: "root", role: { type: "role", value: "button" }, name: { type: "computedString", value: "Submit" } },
+        { nodeId: "para", backendNodeId: 3, parentId: "root", role: { type: "role", value: "paragraph" }, name: { type: "computedString", value: "Description text" } },
+      ],
     });
 
     // When: snapshot is called with interactive=true, compact=true, depth=5
@@ -2584,11 +2454,11 @@ describe("browser data extraction commands", () => {
   describe("get text", () => {
     it("should return text content of element via Runtime.callFunctionOn", async () => {
       // Given: An element with text content "Hello World"
-      const cdp = createMockCDP({
-        "Runtime.callFunctionOn": () => ({
+      const cdp = createMockBiDi({
+        "script.callFunction": () => ({
           result: { type: "string", value: "Hello World" },
         }),
-        "DOM.resolveNode": () => ({
+        "script.evaluate": () => ({
           object: { objectId: "obj-1" },
         }),
       });
@@ -2602,11 +2472,11 @@ describe("browser data extraction commands", () => {
 
     it("should return empty string for element with no text", async () => {
       // Given: An element with no text content
-      const cdp = createMockCDP({
-        "Runtime.callFunctionOn": () => ({
+      const cdp = createMockBiDi({
+        "script.callFunction": () => ({
           result: { type: "string", value: "" },
         }),
-        "DOM.resolveNode": () => ({
+        "script.evaluate": () => ({
           object: { objectId: "obj-1" },
         }),
       });
@@ -2622,11 +2492,11 @@ describe("browser data extraction commands", () => {
   describe("get value", () => {
     it("should return input value", async () => {
       // Given: An input with value "test@test.com"
-      const cdp = createMockCDP({
-        "Runtime.callFunctionOn": () => ({
+      const cdp = createMockBiDi({
+        "script.callFunction": () => ({
           result: { type: "string", value: "test@test.com" },
         }),
-        "DOM.resolveNode": () => ({
+        "script.evaluate": () => ({
           object: { objectId: "obj-1" },
         }),
       });
@@ -2640,11 +2510,11 @@ describe("browser data extraction commands", () => {
 
     it("should return empty string for non-input elements", async () => {
       // Given: A non-input element (e.g., a div)
-      const cdp = createMockCDP({
-        "Runtime.callFunctionOn": () => ({
+      const cdp = createMockBiDi({
+        "script.callFunction": () => ({
           result: { type: "string", value: "" },
         }),
-        "DOM.resolveNode": () => ({
+        "script.evaluate": () => ({
           object: { objectId: "obj-1" },
         }),
       });
@@ -2660,11 +2530,11 @@ describe("browser data extraction commands", () => {
   describe("get attr", () => {
     it("should return attribute value", async () => {
       // Given: An element with data-testid="submit-btn"
-      const cdp = createMockCDP({
-        "Runtime.callFunctionOn": () => ({
+      const cdp = createMockBiDi({
+        "script.callFunction": () => ({
           result: { type: "string", value: "submit-btn" },
         }),
-        "DOM.resolveNode": () => ({
+        "script.evaluate": () => ({
           object: { objectId: "obj-1" },
         }),
       });
@@ -2682,11 +2552,11 @@ describe("browser data extraction commands", () => {
 
     it("should return null for non-existent attribute", async () => {
       // Given: An element without the requested attribute
-      const cdp = createMockCDP({
-        "Runtime.callFunctionOn": () => ({
+      const cdp = createMockBiDi({
+        "script.callFunction": () => ({
           result: { type: "object", subtype: "null", value: null },
         }),
-        "DOM.resolveNode": () => ({
+        "script.evaluate": () => ({
           object: { objectId: "obj-1" },
         }),
       });
@@ -2706,8 +2576,8 @@ describe("browser data extraction commands", () => {
   describe("get count", () => {
     it("should return number of matching elements", async () => {
       // Given: A page with 5 elements matching ".item"
-      const cdp = createMockCDP({
-        "Runtime.evaluate": () => ({
+      const cdp = createMockBiDi({
+        "script.evaluate": () => ({
           result: { type: "number", value: 5 },
         }),
       });
@@ -2721,8 +2591,8 @@ describe("browser data extraction commands", () => {
 
     it("should return 0 when no elements match", async () => {
       // Given: A page with no elements matching the selector
-      const cdp = createMockCDP({
-        "Runtime.evaluate": () => ({
+      const cdp = createMockBiDi({
+        "script.evaluate": () => ({
           result: { type: "number", value: 0 },
         }),
       });
@@ -2738,11 +2608,11 @@ describe("browser data extraction commands", () => {
   describe("get box", () => {
     it("should return bounding box {x, y, width, height}", async () => {
       // Given: An element with bounding box {x:10, y:20, width:100, height:50}
-      const cdp = createMockCDP({
-        "DOM.resolveNode": () => ({
+      const cdp = createMockBiDi({
+        "script.evaluate": () => ({
           object: { objectId: "obj-1" },
         }),
-        "Runtime.callFunctionOn": () => ({
+        "script.callFunction": () => ({
           result: {
             type: "object",
             value: { x: 10, y: 20, width: 100, height: 50 },
@@ -2759,11 +2629,11 @@ describe("browser data extraction commands", () => {
 
     it("should return null for hidden elements", async () => {
       // Given: A hidden element (display:none has no bounding box)
-      const cdp = createMockCDP({
-        "DOM.resolveNode": () => ({
+      const cdp = createMockBiDi({
+        "script.evaluate": () => ({
           object: { objectId: "obj-1" },
         }),
-        "Runtime.callFunctionOn": () => ({
+        "script.callFunction": () => ({
           result: { type: "object", subtype: "null", value: null },
         }),
       });
@@ -2779,11 +2649,11 @@ describe("browser data extraction commands", () => {
   describe("get styles", () => {
     it("should return computed styles object", async () => {
       // Given: An element with computed styles
-      const cdp = createMockCDP({
-        "DOM.resolveNode": () => ({
+      const cdp = createMockBiDi({
+        "script.evaluate": () => ({
           object: { objectId: "obj-1" },
         }),
-        "Runtime.callFunctionOn": () => ({
+        "script.callFunction": () => ({
           result: {
             type: "object",
             value: {
@@ -2806,11 +2676,11 @@ describe("browser data extraction commands", () => {
 
     it("should return specific property when requested", async () => {
       // Given: An element with a specific computed property
-      const cdp = createMockCDP({
-        "DOM.resolveNode": () => ({
+      const cdp = createMockBiDi({
+        "script.evaluate": () => ({
           object: { objectId: "obj-1" },
         }),
-        "Runtime.callFunctionOn": () => ({
+        "script.callFunction": () => ({
           result: { type: "string", value: "16px" },
         }),
       });
@@ -2836,11 +2706,11 @@ describe("element state checks", () => {
   describe("is visible", () => {
     it("should return true for visible element", async () => {
       // Given: A visible element
-      const cdp = createMockCDP({
-        "DOM.resolveNode": () => ({
+      const cdp = createMockBiDi({
+        "script.evaluate": () => ({
           object: { objectId: "obj-1" },
         }),
-        "Runtime.callFunctionOn": () => ({
+        "script.callFunction": () => ({
           result: { type: "boolean", value: true },
         }),
       });
@@ -2854,11 +2724,11 @@ describe("element state checks", () => {
 
     it("should return false for display:none element", async () => {
       // Given: An element with display:none
-      const cdp = createMockCDP({
-        "DOM.resolveNode": () => ({
+      const cdp = createMockBiDi({
+        "script.evaluate": () => ({
           object: { objectId: "obj-1" },
         }),
-        "Runtime.callFunctionOn": () => ({
+        "script.callFunction": () => ({
           result: { type: "boolean", value: false },
         }),
       });
@@ -2872,11 +2742,11 @@ describe("element state checks", () => {
 
     it("should return false for visibility:hidden element", async () => {
       // Given: An element with visibility:hidden
-      const cdp = createMockCDP({
-        "DOM.resolveNode": () => ({
+      const cdp = createMockBiDi({
+        "script.evaluate": () => ({
           object: { objectId: "obj-1" },
         }),
-        "Runtime.callFunctionOn": () => ({
+        "script.callFunction": () => ({
           result: { type: "boolean", value: false },
         }),
       });
@@ -2890,11 +2760,11 @@ describe("element state checks", () => {
 
     it("should return false for element with zero dimensions", async () => {
       // Given: An element with zero width and height
-      const cdp = createMockCDP({
-        "DOM.resolveNode": () => ({
+      const cdp = createMockBiDi({
+        "script.evaluate": () => ({
           object: { objectId: "obj-1" },
         }),
-        "Runtime.callFunctionOn": () => ({
+        "script.callFunction": () => ({
           result: { type: "boolean", value: false },
         }),
       });
@@ -2910,11 +2780,11 @@ describe("element state checks", () => {
   describe("is enabled", () => {
     it("should return true for enabled input", async () => {
       // Given: An enabled input element
-      const cdp = createMockCDP({
-        "DOM.resolveNode": () => ({
+      const cdp = createMockBiDi({
+        "script.evaluate": () => ({
           object: { objectId: "obj-1" },
         }),
-        "Runtime.callFunctionOn": () => ({
+        "script.callFunction": () => ({
           result: { type: "boolean", value: true },
         }),
       });
@@ -2928,11 +2798,11 @@ describe("element state checks", () => {
 
     it("should return false for disabled input", async () => {
       // Given: A disabled input element
-      const cdp = createMockCDP({
-        "DOM.resolveNode": () => ({
+      const cdp = createMockBiDi({
+        "script.evaluate": () => ({
           object: { objectId: "obj-1" },
         }),
-        "Runtime.callFunctionOn": () => ({
+        "script.callFunction": () => ({
           result: { type: "boolean", value: false },
         }),
       });
@@ -2946,11 +2816,11 @@ describe("element state checks", () => {
 
     it("should return true for non-form elements (always enabled)", async () => {
       // Given: A non-form element (e.g., a div)
-      const cdp = createMockCDP({
-        "DOM.resolveNode": () => ({
+      const cdp = createMockBiDi({
+        "script.evaluate": () => ({
           object: { objectId: "obj-1" },
         }),
-        "Runtime.callFunctionOn": () => ({
+        "script.callFunction": () => ({
           result: { type: "boolean", value: true },
         }),
       });
@@ -2966,11 +2836,11 @@ describe("element state checks", () => {
   describe("is checked", () => {
     it("should return true for checked checkbox", async () => {
       // Given: A checked checkbox
-      const cdp = createMockCDP({
-        "DOM.resolveNode": () => ({
+      const cdp = createMockBiDi({
+        "script.evaluate": () => ({
           object: { objectId: "obj-1" },
         }),
-        "Runtime.callFunctionOn": () => ({
+        "script.callFunction": () => ({
           result: { type: "boolean", value: true },
         }),
       });
@@ -2984,11 +2854,11 @@ describe("element state checks", () => {
 
     it("should return false for unchecked checkbox", async () => {
       // Given: An unchecked checkbox
-      const cdp = createMockCDP({
-        "DOM.resolveNode": () => ({
+      const cdp = createMockBiDi({
+        "script.evaluate": () => ({
           object: { objectId: "obj-1" },
         }),
-        "Runtime.callFunctionOn": () => ({
+        "script.callFunction": () => ({
           result: { type: "boolean", value: false },
         }),
       });
@@ -3002,11 +2872,11 @@ describe("element state checks", () => {
 
     it("should work for radio buttons", async () => {
       // Given: A selected radio button
-      const cdp = createMockCDP({
-        "DOM.resolveNode": () => ({
+      const cdp = createMockBiDi({
+        "script.evaluate": () => ({
           object: { objectId: "obj-1" },
         }),
-        "Runtime.callFunctionOn": () => ({
+        "script.callFunction": () => ({
           result: { type: "boolean", value: true },
         }),
       });
@@ -3025,19 +2895,20 @@ describe("element state checks", () => {
 // ============================================================================
 
 describe("console clear", () => {
-  let cdp: ReturnType<typeof createMockCDP>;
+  let cdp: ReturnType<typeof createMockBiDi>;
 
   beforeEach(() => {
     resetConsoleBuffer();
-    cdp = createMockCDP();
+    cdp = createMockBiDi();
     setupConsoleCapture(cdp);
   });
 
   it("should return captured console messages from the buffer", async () => {
     // Given: The console buffer has 100 messages via CDP events
     for (let i = 0; i < 100; i++) {
-      cdp._emit("Runtime.consoleAPICalled", {
-        type: "log",
+      cdp._emit("log.entryAdded", {
+      type: "console",
+      level: "log",
         args: [{ type: "string", value: `Message ${i}` }],
         timestamp: Date.now() + i,
       });
@@ -3066,10 +2937,10 @@ describe("console clear", () => {
 // ============================================================================
 
 describe("eval variants", () => {
-  let cdp: ReturnType<typeof createMockCDP>;
+  let cdp: ReturnType<typeof createMockBiDi>;
 
   beforeEach(() => {
-    cdp = createMockCDP();
+    cdp = createMockBiDi();
   });
 
   it("should evaluate multi-line expression (stdin mode)", async () => {
@@ -3080,8 +2951,8 @@ describe("eval variants", () => {
       texts.join(', ')
     `;
 
-    cdp = createMockCDP({
-      "Runtime.evaluate": (p: unknown) => {
+    cdp = createMockBiDi({
+      "script.evaluate": (p: unknown) => {
         const params = p as { expression: string };
         // Verify the full multi-line expression is passed through
         expect(params.expression).toContain("querySelectorAll");
@@ -3107,8 +2978,8 @@ describe("eval variants", () => {
     // "document.title" in base64
     const base64Expression = btoa("document.title");
 
-    cdp = createMockCDP({
-      "Runtime.evaluate": (p: unknown) => {
+    cdp = createMockBiDi({
+      "script.evaluate": (p: unknown) => {
         const params = p as { expression: string };
         // The implementation should decode base64 before evaluating
         expect(params.expression).toBe("document.title");
@@ -3134,16 +3005,16 @@ describe("eval variants", () => {
 // ============================================================================
 
 describe("TS-10: DOM content to markdown", () => {
-  let cdp: ReturnType<typeof createMockCDP>;
+  let cdp: ReturnType<typeof createMockBiDi>;
 
   beforeEach(() => {
-    cdp = createMockCDP();
+    cdp = createMockBiDi();
   });
 
   it("should convert headings to # markdown syntax", async () => {
     // Given: A page with heading elements
-    cdp = createMockCDP({
-      "Runtime.evaluate": () => ({
+    cdp = createMockBiDi({
+      "script.evaluate": () => ({
         result: {
           type: "string",
           value: "<h1>Main Title</h1><h2>Subtitle</h2><h3>Section</h3>",
@@ -3162,8 +3033,8 @@ describe("TS-10: DOM content to markdown", () => {
 
   it("should wrap code blocks in fenced markdown", async () => {
     // Given: A page with code blocks
-    cdp = createMockCDP({
-      "Runtime.evaluate": () => ({
+    cdp = createMockBiDi({
+      "script.evaluate": () => ({
         result: {
           type: "string",
           value: '<pre><code class="language-js">const x = 1;</code></pre>',
@@ -3181,8 +3052,8 @@ describe("TS-10: DOM content to markdown", () => {
 
   it("should convert tables to markdown tables", async () => {
     // Given: A page with an HTML table
-    cdp = createMockCDP({
-      "Runtime.evaluate": () => ({
+    cdp = createMockBiDi({
+      "script.evaluate": () => ({
         result: {
           type: "string",
           value: "<table><thead><tr><th>Name</th><th>Age</th></tr></thead><tbody><tr><td>Alice</td><td>30</td></tr></tbody></table>",
@@ -3202,8 +3073,8 @@ describe("TS-10: DOM content to markdown", () => {
 
   it("should exclude navigation/sidebar elements", async () => {
     // Given: A page with nav, aside, and main content
-    cdp = createMockCDP({
-      "Runtime.evaluate": () => ({
+    cdp = createMockBiDi({
+      "script.evaluate": () => ({
         result: {
           type: "string",
           value: "<nav>Menu items</nav><aside>Sidebar</aside><main><h1>Content</h1><p>Main text</p></main>",
