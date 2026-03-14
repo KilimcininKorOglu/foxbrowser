@@ -136,6 +136,7 @@ export class BiDiConnection {
    * Resolves on the `open` event; rejects on `error`.
    */
   async connect(): Promise<void> {
+    this.closed = false;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let WS = (globalThis as any).WebSocket;
     if (!WS) {
