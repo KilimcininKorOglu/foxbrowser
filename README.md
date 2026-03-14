@@ -1,13 +1,13 @@
-# browsirai
+# foxbrowser
 
-[![npm version](https://img.shields.io/npm/v/browsirai.svg?style=flat-square)](https://www.npmjs.com/package/browsirai)
+[![npm version](https://img.shields.io/npm/v/foxbrowser.svg?style=flat-square)](https://www.npmjs.com/package/foxbrowser)
 [![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue?style=flat-square)](LICENSE)
 
 **Your browser. Your sessions. Your agent.**
 
 An MCP server + CLI that connects AI coding agents to Firefox via WebDriver BiDi. Use as an MCP server for LLM-driven automation, or as a standalone CLI for direct browser control from the terminal.
 
-## Why browsirai?
+## Why foxbrowser?
 
 - **Standard protocol** — Uses WebDriver BiDi, the W3C standard for browser automation. No proprietary protocols, no vendor lock-in.
 
@@ -22,7 +22,7 @@ An MCP server + CLI that connects AI coding agents to Firefox via WebDriver BiDi
 ## Quick Start
 
 ```bash
-npx browsirai install
+npx foxbrowser install
 ```
 
 Auto-detects your AI platform and configures the MCP server. No global install needed.
@@ -34,9 +34,9 @@ Auto-detects your AI platform and configures the MCP server. No global install n
 // .mcp.json
 {
   "mcpServers": {
-    "browsirai": {
+    "foxbrowser": {
       "command": "npx",
-      "args": ["-y", "browsirai"]
+      "args": ["-y", "foxbrowser"]
     }
   }
 }
@@ -50,9 +50,9 @@ Auto-detects your AI platform and configures the MCP server. No global install n
 // .cursor/mcp.json
 {
   "mcpServers": {
-    "browsirai": {
+    "foxbrowser": {
       "command": "npx",
-      "args": ["-y", "browsirai"]
+      "args": ["-y", "foxbrowser"]
     }
   }
 }
@@ -66,9 +66,9 @@ Auto-detects your AI platform and configures the MCP server. No global install n
 // .vscode/mcp.json
 {
   "servers": {
-    "browsirai": {
+    "foxbrowser": {
       "command": "npx",
-      "args": ["-y", "browsirai"]
+      "args": ["-y", "foxbrowser"]
     }
   }
 }
@@ -82,9 +82,9 @@ Auto-detects your AI platform and configures the MCP server. No global install n
 // ~/.gemini/settings.json
 {
   "mcpServers": {
-    "browsirai": {
+    "foxbrowser": {
       "command": "npx",
-      "args": ["-y", "browsirai"]
+      "args": ["-y", "foxbrowser"]
     }
   }
 }
@@ -98,9 +98,9 @@ Auto-detects your AI platform and configures the MCP server. No global install n
 // ~/.codeium/windsurf/mcp_config.json
 {
   "mcpServers": {
-    "browsirai": {
+    "foxbrowser": {
       "command": "npx",
-      "args": ["-y", "browsirai"]
+      "args": ["-y", "foxbrowser"]
     }
   }
 }
@@ -114,9 +114,9 @@ Auto-detects your AI platform and configures the MCP server. No global install n
 // Cline MCP settings (Settings > MCP Servers)
 {
   "mcpServers": {
-    "browsirai": {
+    "foxbrowser": {
       "command": "npx",
-      "args": ["-y", "browsirai"]
+      "args": ["-y", "foxbrowser"]
     }
   }
 }
@@ -130,9 +130,9 @@ Auto-detects your AI platform and configures the MCP server. No global install n
 // ~/.config/zed/settings.json
 {
   "context_servers": {
-    "browsirai": {
+    "foxbrowser": {
       "command": "npx",
-      "args": ["-y", "browsirai"]
+      "args": ["-y", "foxbrowser"]
     }
   }
 }
@@ -145,9 +145,9 @@ Auto-detects your AI platform and configures the MCP server. No global install n
 ```yaml
 # ~/.continue/config.yaml
 mcpServers:
-  browsirai:
+  foxbrowser:
     command: npx
-    args: ["-y", "browsirai"]
+    args: ["-y", "foxbrowser"]
 ```
 </details>
 
@@ -158,9 +158,9 @@ mcpServers:
 // opencode.json
 {
   "mcpServers": {
-    "browsirai": {
+    "foxbrowser": {
       "command": "npx",
-      "args": ["-y", "browsirai"]
+      "args": ["-y", "foxbrowser"]
     }
   }
 }
@@ -169,15 +169,15 @@ mcpServers:
 
 ## CLI Mode
 
-browsirai also works as a standalone CLI -- no LLM required. Same commands, same Firefox connection.
+foxbrowser also works as a standalone CLI -- no LLM required. Same commands, same Firefox connection.
 
 ```bash
-browsirai open example.com
-browsirai snapshot -i
-browsirai click @e5
-browsirai fill @e2 "hello world"
-browsirai press Enter
-browsirai eval "document.title"
+foxbrowser open example.com
+foxbrowser snapshot -i
+foxbrowser click @e5
+foxbrowser fill @e2 "hello world"
+foxbrowser press Enter
+foxbrowser eval "document.title"
 ```
 
 ### Commands (30)
@@ -192,38 +192,38 @@ browsirai eval "document.title"
 ### Short Flags
 
 ```bash
-browsirai snapshot -i          # interactive elements only
-browsirai snapshot -c          # compact output
-browsirai snapshot -d 3        # depth limit
-browsirai snapshot -s "main"   # scope to selector
-browsirai screenshot -o ss.png # save to file
+foxbrowser snapshot -i          # interactive elements only
+foxbrowser snapshot -c          # compact output
+foxbrowser snapshot -d 3        # depth limit
+foxbrowser snapshot -s "main"   # scope to selector
+foxbrowser screenshot -o ss.png # save to file
 ```
 
 ### Positional Arguments
 
 ```bash
-browsirai click @e5            # ref (not --ref=@e5)
-browsirai click "#submit"      # CSS selector
-browsirai fill @e2 "text"      # ref + value
-browsirai drag @e1 @e2         # source + target
-browsirai select @e3 "option1" # ref + value(s)
-browsirai scroll down           # direction
-browsirai resize 1280 720      # width height
+foxbrowser click @e5            # ref (not --ref=@e5)
+foxbrowser click "#submit"      # CSS selector
+foxbrowser fill @e2 "text"      # ref + value
+foxbrowser drag @e1 @e2         # source + target
+foxbrowser select @e3 "option1" # ref + value(s)
+foxbrowser scroll down           # direction
+foxbrowser resize 1280 720      # width height
 ```
 
 ### Workflow Example
 
 ```bash
-browsirai open github.com/login
-browsirai snapshot -i
+foxbrowser open github.com/login
+foxbrowser snapshot -i
 # @e12 textbox "Username"
 # @e15 textbox "Password"
 # @e18 button "Sign in"
-browsirai fill @e12 "user@example.com"
-browsirai fill @e15 "password"
-browsirai click @e18
-browsirai wait --url="github.com/dashboard"
-browsirai snapshot -i
+foxbrowser fill @e12 "user@example.com"
+foxbrowser fill @e15 "password"
+foxbrowser click @e18
+foxbrowser wait --url="github.com/dashboard"
+foxbrowser snapshot -i
 ```
 
 ## Features
@@ -313,11 +313,11 @@ browsirai snapshot -i
 
 ### Protocol
 
-browsirai uses **WebDriver BiDi** -- the W3C standard bidirectional protocol for browser automation. Unlike CDP (Chrome DevTools Protocol), BiDi is designed as an open standard with cross-browser support.
+foxbrowser uses **WebDriver BiDi** -- the W3C standard bidirectional protocol for browser automation. Unlike CDP (Chrome DevTools Protocol), BiDi is designed as an open standard with cross-browser support.
 
 ```
 ┌──────────────────┐     WebDriver BiDi      ┌──────────────────┐
-│  browsirai       │ ◄──────────────────────► │  Firefox         │
+│  foxbrowser       │ ◄──────────────────────► │  Firefox         │
 │  MCP Server      │     WebSocket            │  (BiDi endpoint) │
 │                  │                          │                  │
 │  - Tool handlers │                          │  - DOM access    │
@@ -345,7 +345,7 @@ browser_screenshot  ~10K tokens    Visual (opt-in)
 
 `browser_screenshot` without `visual: true` auto-returns a text snapshot. The LLM gets the same information at 1/20th the cost.
 
-| Scenario                       | Screenshot-default tool | browsirai       |
+| Scenario                       | Screenshot-default tool | foxbrowser       |
 | ------------------------------ | ----------------------: | --------------: |
 | 50 interactions/day            |        500K tokens/day  |  25K tokens/day |
 | 20 devs x 22 working days     |       220M tokens/month | 11M tokens/month|
@@ -368,14 +368,14 @@ Session 2: starts with latest version
 
 - 1-hour rate limit between checks
 - npx: clears npm cache (next invocation fetches latest)
-- global: `npm install -g browsirai@latest` in background
+- global: `npm install -g foxbrowser@latest` in background
 - dev mode: skipped
 - Upgrade notice shown on `browser_connect` if newer version available
 - All errors silently caught -- never crashes the server
 
 ### Skill Injection
 
-On every `browser_connect`, browsirai injects a structured skill document into the agent context:
+On every `browser_connect`, foxbrowser injects a structured skill document into the agent context:
 
 - **Cost hierarchy** -- guides the agent to prefer `evaluate` > `snapshot` > `screenshot`
 - **Workflow patterns** -- snapshot-ref interaction model, when to re-snapshot
@@ -385,21 +385,21 @@ On every `browser_connect`, browsirai injects a structured skill document into t
 ## Diagnostics
 
 ```bash
-browsirai doctor
+foxbrowser doctor
 ```
 
 Checks Firefox installation, Node.js version, BiDi connectivity, and platform configuration.
 
 ## Security
 
-### What browsirai does
+### What foxbrowser does
 
 - Launches a **Firefox instance** with WebDriver BiDi enabled
 - Returns only **page content** to the agent (DOM text, evaluate results, snapshots)
 - **Redacts secrets** in network output (Authorization, Cookie, Set-Cookie, Bearer tokens, JWTs)
 - Resets state gracefully when Firefox closes (MCP server stays alive)
 
-### What browsirai does NOT do
+### What foxbrowser does NOT do
 
 - Send cookie values to the LLM provider
 - Store credentials in any config file
