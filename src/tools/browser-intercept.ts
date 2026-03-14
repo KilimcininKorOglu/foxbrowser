@@ -60,7 +60,8 @@ function matchGlob(pattern: string, url: string): boolean {
     .replace(/[.+^${}()|[\]\\]/g, "\\$&")
     .replace(/\*\*/g, "___DOUBLESTAR___")
     .replace(/\*/g, "[^/]*")
-    .replace(/___DOUBLESTAR___/g, ".*");
+    .replace(/___DOUBLESTAR___/g, ".*")
+    .replace(/\?/g, ".");
   return new RegExp(`^${regex}$`).test(url);
 }
 
