@@ -7,7 +7,7 @@ import { detectPlatform, getInstallConfig } from "./adapters/detect.js";
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { homedir } from "node:os";
-import { connectChrome } from "./chrome-launcher.js";
+import { connectFirefox } from "./firefox-launcher.js";
 
 import type { PlatformId } from "./adapters/types.js";
 
@@ -145,17 +145,17 @@ export async function runInstall(): Promise<void> {
 
   log.success(`Config written to ${filePath}`);
 
-  // --- Check/establish CDP connection (auto-launches Chrome if needed) ---
+  // --- Check/establish BiDi connection (auto-launches Firefox if needed) ---
   const s = spinner();
-  s.start("Connecting to Chrome DevTools Protocol...");
+  s.start("Connecting to Firefox via WebDriver BiDi...");
 
-  const connection = await connectChrome({ autoLaunch: true });
+  const connection = await connectFirefox({ autoLaunch: true });
   if (connection.success) {
     s.stop(connection.wsEndpoint
-      ? `Connected to Chrome (port ${connection.port})`
-      : `CDP reachable on port ${connection.port}`);
+      ? `Connected to Firefox (port ${connection.port})`
+      : `BiDi reachable on port ${connection.port}`);
   } else {
-    s.stop(connection.error ?? "Could not connect to Chrome");
+    s.stop(connection.error ?? "Could not connect to Firefox");
     log.warn("Run `browsirai doctor` to diagnose.");
   }
 

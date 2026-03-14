@@ -1,7 +1,7 @@
 {
   "name": "browsirai",
-  "version": "0.2.0",
-  "description": "Live browser plugin for AI coding agents. Connect to your running Chrome session via CDP.",
+  "version": "0.3.0",
+  "description": "Live browser plugin for AI coding agents. Connect to your running Firefox session via WebDriver BiDi.",
   "author": "Mert Koseoglu",
   "license": "AGPL-3.0",
   "homepage": "https://github.com/mksglu/browsir.ai#readme",
@@ -49,9 +49,8 @@
   },
   "keywords": [
     "browser",
-    "cdp",
-    "chrome",
-    "devtools",
+    "webdriver-bidi",
+    "firefox",
     "mcp",
     "ai-agent",
     "claude-code",

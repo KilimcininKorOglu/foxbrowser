@@ -1,14 +1,14 @@
 /**
- * Tool registry: Zod schemas and MCP tool registration for all 29 browser tools.
+ * Tool registry: Zod schemas and MCP tool registration for all browser tools.
  *
- * Wires real tool implementations to the MCP server with lazy CDP connection.
- * On first tool call, connects to Chrome via DevToolsActivePort or port 9222.
+ * Wires real tool implementations to the MCP server with lazy BiDi connection.
+ * On first tool call, connects to Firefox via WebDriver BiDi.
  */
 
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { CDPConnection } from "../cdp/connection.js";
-import { connectChrome, readDevToolsActivePort, isPortReachable, launchHeadlessChrome, needsCookieResync } from "../chrome-launcher.js";
+import { BiDiConnection } from "../bidi/connection.js";
+import { connectFirefox, launchHeadlessFirefox } from "../firefox-launcher.js";
 
 // Tool implementations
 import { browserNavigate } from "./browser-navigate.js";
@@ -41,60 +41,16 @@ import { browserDiff } from "./browser-diff.js";
 import { browserSaveState, browserLoadState } from "./browser-session-state.js";
 
 // ---------------------------------------------------------------------------
-// Lazy CDP connection — browser-level with session routing
+// Lazy BiDi connection — connects to Firefox via WebDriver BiDi
 // ---------------------------------------------------------------------------
 
-/** Browser-level CDP connection */
-let browserCdp: CDPConnection | null = null;
-/** Current page session ID for target-scoped commands */
-let activeSessionId: string | null = null;
+let bidiConnection: BiDiConnection | null = null;
 
-/**
- * Session-aware CDP proxy that wraps the browser connection
- * and automatically adds sessionId to all commands.
- */
-class SessionCDP {
-  constructor(
-    private conn: CDPConnection,
-    private sessionId: string,
-  ) {}
-
-  get isConnected() { return this.conn.isConnected; }
-
-  send(method: string, params?: Record<string, unknown>, options?: { timeout?: number; sessionId?: string }) {
-    return this.conn.send(method, params, {
-      ...options,
-      sessionId: options?.sessionId ?? this.sessionId,
-    });
-  }
-
-  on(event: string, handler: (...args: unknown[]) => void) {
-    this.conn.on(event, handler);
-  }
-
-  off(event: string, handler: (...args: unknown[]) => void) {
-    this.conn.off(event, handler);
-  }
-
-  close() { /* don't close browser connection */ }
-}
-
-/**
- * Get or create a session-scoped CDP connection.
- *
- * 1. Connect to browser WebSocket via DevToolsActivePort
- * 2. List targets → find first page
- * 3. Attach to page → get sessionId
- * 4. Return session-scoped proxy
- */
-/** Whether to launch Chrome headless (set via browser_connect { headless: true }) */
 let headlessMode = process.env.BROWSIR_HEADLESS === "1" || process.env.BROWSIR_HEADLESS === "true";
 
-/** Attach crash/disconnect listeners to reset state when Chrome dies. */
-function attachLifecycleListeners(conn: CDPConnection): void {
+function attachLifecycleListeners(conn: BiDiConnection): void {
   const resetState = () => {
-    browserCdp = null;
-    activeSessionId = null;
+    bidiConnection = null;
     resetConsoleBuffer();
     resetNetworkBuffer();
   };
@@ -102,109 +58,60 @@ function attachLifecycleListeners(conn: CDPConnection): void {
   conn.on("browserCrashed", resetState);
 }
 
-async function getCDP(): Promise<CDPConnection> {
-  // Reuse existing session if still connected
-  if (browserCdp?.isConnected && activeSessionId) {
-    return new SessionCDP(browserCdp, activeSessionId) as unknown as CDPConnection;
+async function getBiDi(): Promise<BiDiConnection> {
+  if (bidiConnection?.isConnected) {
+    return bidiConnection;
   }
 
-  // 1. Connect to Chrome
-  //    Headless mode: launch separate Chrome on port 9333 (doesn't touch user's Chrome)
-  //    Normal mode: connect to user's Chrome (auto-launch if needed)
   if (headlessMode) {
-    const launch = await launchHeadlessChrome();
+    const launch = await launchHeadlessFirefox();
     if (!launch.success) {
-      throw new Error(launch.error ?? "Failed to launch headless Chrome.");
+      throw new Error(launch.error ?? "Failed to launch headless Firefox.");
     }
-    const wsUrl = launch.wsEndpoint ?? `ws://127.0.0.1:${launch.port}/devtools/browser`;
+    const wsUrl = launch.wsEndpoint ?? `ws://127.0.0.1:${launch.port}/session`;
 
-    browserCdp = new CDPConnection(wsUrl);
-    await browserCdp.connect();
-    attachLifecycleListeners(browserCdp);
+    bidiConnection = new BiDiConnection(wsUrl);
+    await bidiConnection.connect();
+    attachLifecycleListeners(bidiConnection);
 
-    const targets = await browserCdp.send("Target.getTargets") as {
-      targetInfos: Array<{ targetId: string; type: string; url: string; title: string }>;
-    };
+    // Subscribe to BiDi events for console + network capture
+    try {
+      await bidiConnection.send("session.subscribe", {
+        events: ["log.entryAdded", "network.beforeRequestSent", "network.responseCompleted"],
+      });
+    } catch { /* non-fatal */ }
 
-    let page = targets.targetInfos.find(t => t.type === "page");
-    if (!page) {
-      // Create a new tab in headless
-      const created = await browserCdp.send("Target.createTarget", { url: "about:blank" }) as { targetId: string };
-      page = { targetId: created.targetId, type: "page", url: "about:blank", title: "" };
-    }
+    setupConsoleCapture(bidiConnection as any);
+    setupNetworkCapture(bidiConnection as any);
 
-    const attached = await browserCdp.send("Target.attachToTarget", {
-      targetId: page.targetId, flatten: true,
-    }) as { sessionId: string };
-
-    activeSessionId = attached.sessionId;
-    const session = new SessionCDP(browserCdp, activeSessionId);
-    await Promise.all([
-      session.send("Network.enable"),
-      session.send("Runtime.enable"),
-      session.send("Page.enable"),
-    ]).catch(() => {});
-
-    // Wire CDP event capture for console + network
-    setupConsoleCapture(session as unknown as CDPConnection);
-    setupNetworkCapture(session as unknown as CDPConnection);
-
-    return session as unknown as CDPConnection;
+    return bidiConnection;
   }
 
-  const connection = await connectChrome({ autoLaunch: true });
+  const connection = await connectFirefox({ autoLaunch: true });
 
   if (!connection.success) {
     throw new Error(
-      connection.error ?? "Cannot connect to Chrome. Run `browsirai doctor` to set up."
+      connection.error ?? "Cannot connect to Firefox. Run `browsirai doctor` to set up."
     );
   }
 
-  const wsUrl = connection.wsEndpoint ?? `ws://127.0.0.1:${connection.port}/devtools/browser`;
+  const wsUrl = connection.wsEndpoint ?? `ws://127.0.0.1:${connection.port}/session`;
 
-  // 2. Connect to browser WebSocket
-  browserCdp = new CDPConnection(wsUrl);
-  await browserCdp.connect();
-  attachLifecycleListeners(browserCdp);
+  bidiConnection = new BiDiConnection(wsUrl);
+  await bidiConnection.connect();
+  attachLifecycleListeners(bidiConnection);
 
-  // 3. Find a page target
-  const targets = await browserCdp.send("Target.getTargets") as {
-    targetInfos: Array<{ targetId: string; type: string; url: string; title: string }>;
-  };
+  // Subscribe to BiDi events for console + network capture
+  try {
+    await bidiConnection.send("session.subscribe", {
+      events: ["log.entryAdded", "network.beforeRequestSent", "network.responseCompleted"],
+    });
+  } catch { /* non-fatal */ }
 
-  let page = targets.targetInfos.find(
-    (t) => t.type === "page" && !t.url.startsWith("chrome://")
-  ) ?? targets.targetInfos.find(
-    (t) => t.type === "page"
-  );
+  setupConsoleCapture(bidiConnection as any);
+  setupNetworkCapture(bidiConnection as any);
 
-  if (!page) {
-    // No tabs open — create one (same as headless mode)
-    const created = await browserCdp.send("Target.createTarget", { url: "about:blank" }) as { targetId: string };
-    page = { targetId: created.targetId, type: "page", url: "about:blank", title: "" };
-  }
-
-  // 4. Attach to page target
-  const attached = await browserCdp.send("Target.attachToTarget", {
-    targetId: page.targetId,
-    flatten: true,
-  }) as { sessionId: string };
-
-  activeSessionId = attached.sessionId;
-
-  // 5. Enable CDP domains for network/console capture
-  const session = new SessionCDP(browserCdp, activeSessionId);
-  await Promise.all([
-    session.send("Network.enable"),
-    session.send("Runtime.enable"),
-    session.send("Page.enable"),
-  ]).catch(() => {/* non-fatal if already enabled */});
-
-  // Wire CDP event capture for console + network
-  setupConsoleCapture(session as unknown as CDPConnection);
-  setupNetworkCapture(session as unknown as CDPConnection);
-
-  return session as unknown as CDPConnection;
+  return bidiConnection;
 }
 
 // ---------------------------------------------------------------------------
@@ -233,7 +140,7 @@ function errorResult(msg: string) {
 // SKILL injection (on connect) & per-tool hints
 // ---------------------------------------------------------------------------
 
-const SKILL_SUMMARY = `Connected to Chrome via CDP.
+const SKILL_SUMMARY = `Connected to Firefox via WebDriver BiDi.
 
 ## browsirai — Quick Reference
 
@@ -621,7 +528,7 @@ export const schemas: Record<string, z.ZodType> = {
 // ---------------------------------------------------------------------------
 
 const descriptions: Record<string, string> = {
-  browser_connect: "Connect to a running browser instance via Chrome DevTools Protocol. Use headless: true to run in background without visible window. Use resync: true to force cookie re-sync (e.g. after switching Chrome profile).",
+  browser_connect: "Connect to a running Firefox instance via WebDriver BiDi. Use headless: true to run in background without visible window.",
   browser_tabs: "List open browser tabs, optionally filtered by title or URL",
   browser_snapshot: "Capture an accessibility snapshot of the current page or a specific element. [~500 tokens, PREFERRED for page understanding]",
   browser_screenshot: "Take a screenshot. Auto-returns snapshot text unless visual: true, fullPage: true, or selector is specified. [~10K tokens when image returned]",
@@ -671,7 +578,7 @@ const cBool = z.preprocess(
 );
 
 const toolShapes: Record<string, Record<string, z.ZodType>> = {
-  browser_connect: { port: cNum.optional(), host: z.string().optional(), headless: cBool.optional(), resync: cBool.optional() },
+  browser_connect: { port: cNum.optional(), host: z.string().optional(), headless: cBool.optional() },
   browser_tabs: { filter: z.string().optional() },
   browser_snapshot: {
     selector: z.string().optional(),
@@ -738,13 +645,7 @@ function createHandlers(): Record<string, ToolHandler> {
 
     browser_navigate: async (args) => {
       try {
-        // Navigate-hook: resync cookies if user's Chrome profile or cookies changed
-        if (needsCookieResync() && browserCdp?.isConnected) {
-          browserCdp.close();
-          browserCdp = undefined as any;
-          activeSessionId = undefined as any;
-        }
-        const conn = await getCDP();
+        const conn = await getBiDi();
         const result = await browserNavigate(conn, args as any);
         return textResult(`Navigated to ${result.url}\nTitle: ${result.title}`);
       } catch (e: any) {
@@ -754,7 +655,7 @@ function createHandlers(): Record<string, ToolHandler> {
 
     browser_screenshot: async (args) => {
       try {
-        const conn = await getCDP();
+        const conn = await getBiDi();
         // Cost optimization: auto-downgrade to snapshot when no visual need
         const needsImage = args.visual === true || args.fullPage === true
           || args.selector || args.annotate === true;
@@ -784,7 +685,7 @@ function createHandlers(): Record<string, ToolHandler> {
 
     browser_tabs: async (args) => {
       try {
-        const conn = await getCDP();
+        const conn = await getBiDi();
         const result = await browserTabs(conn, args as any);
         const lines = result.tabs.map(t => `[${t.id}] ${t.title}\n  ${t.url}`);
         return textResult(lines.length ? lines.join("\n\n") : "No tabs found");
@@ -795,7 +696,7 @@ function createHandlers(): Record<string, ToolHandler> {
 
     browser_evaluate: async (args) => {
       try {
-        const conn = await getCDP();
+        const conn = await getBiDi();
         const result = await browserEval(conn, args as any);
         if (result.error) return errorResult(result.error);
         return textResult(JSON.stringify(result.result, null, 2));
@@ -806,7 +707,7 @@ function createHandlers(): Record<string, ToolHandler> {
 
     browser_snapshot: async (args) => {
       try {
-        const conn = await getCDP();
+        const conn = await getBiDi();
         const result = await browserSnapshot(conn, args as any);
         return textResult(typeof result === "string" ? result : JSON.stringify(result, null, 2));
       } catch (e: any) {
@@ -816,7 +717,7 @@ function createHandlers(): Record<string, ToolHandler> {
 
     browser_click: async (args) => {
       try {
-        const conn = await getCDP();
+        const conn = await getBiDi();
         const result = await browserClick(conn, args as any);
         return textResult(typeof result === "string" ? result : JSON.stringify(result));
       } catch (e: any) {
@@ -826,7 +727,7 @@ function createHandlers(): Record<string, ToolHandler> {
 
     browser_scroll: async (args) => {
       try {
-        const conn = await getCDP();
+        const conn = await getBiDi();
         const result = await browserScroll(conn, args as any);
         return textResult(typeof result === "string" ? result : JSON.stringify(result));
       } catch (e: any) {
@@ -836,7 +737,7 @@ function createHandlers(): Record<string, ToolHandler> {
 
     browser_html: async (args) => {
       try {
-        const conn = await getCDP();
+        const conn = await getBiDi();
         const result = await browserHtml(conn, args as any);
         return textResult(typeof result === "string" ? result : JSON.stringify(result));
       } catch (e: any) {
@@ -846,18 +747,16 @@ function createHandlers(): Record<string, ToolHandler> {
 
     browser_connect: async (args) => {
       try {
-        const typed = args as { headless?: boolean; resync?: boolean };
+        const typed = args as { headless?: boolean };
         const wasHeadless = headlessMode;
         headlessMode = typed.headless === true;
-        // Reset connection when switching modes or resync requested (e.g. user switched Chrome profile)
-        if ((wasHeadless !== headlessMode || typed.resync === true) && browserCdp?.isConnected) {
-          browserCdp.close();
-          browserCdp = undefined as any;
-          activeSessionId = undefined as any;
+        if (wasHeadless !== headlessMode && bidiConnection?.isConnected) {
+          bidiConnection.close();
+          bidiConnection = null;
         }
-        const conn = await getCDP();
+        const conn = await getBiDi();
         const mode = headlessMode ? " (headless)" : "";
-        let summary = SKILL_SUMMARY.replace("Connected to Chrome via CDP.", `Connected to Chrome via CDP${mode}.`);
+        let summary = SKILL_SUMMARY.replace("Connected to Firefox via WebDriver BiDi.", `Connected to Firefox via WebDriver BiDi${mode}.`);
 
         // Append upgrade notice if a newer version is available
         try {
@@ -876,14 +775,11 @@ function createHandlers(): Record<string, ToolHandler> {
 
     browser_list: async () => {
       try {
-        if (!browserCdp?.isConnected) {
-          await getCDP();
-        }
-        const targets = await browserCdp!.send("Target.getTargets") as {
-          targetInfos: Array<{ targetId: string; type: string; title: string; url: string }>;
+        const conn = await getBiDi();
+        const result = (await conn.send("browsingContext.getTree", {})) as {
+          contexts: Array<{ context: string; url: string; children: unknown[] }>;
         };
-        const pages = targets.targetInfos.filter(t => t.type === "page");
-        const lines = pages.map(t => `[${t.targetId}] ${t.title}\n  ${t.url}`);
+        const lines = result.contexts.map(c => `[${c.context}] ${c.url}`);
         return textResult(lines.length ? lines.join("\n\n") : "No pages found");
       } catch (e: any) {
         return errorResult(e.message);
@@ -894,7 +790,7 @@ function createHandlers(): Record<string, ToolHandler> {
 
     browser_navigate_back: async (args) => {
       try {
-        const conn = await getCDP();
+        const conn = await getBiDi();
         const result = await browserNavigateBack(conn, args as any);
         return textResult(result.url ? `Navigated ${args.direction || "back"} to ${result.url}` : `Navigated ${args.direction || "back"}`);
       } catch (e: any) {
@@ -904,7 +800,7 @@ function createHandlers(): Record<string, ToolHandler> {
 
     browser_press_key: async (args) => {
       try {
-        const conn = await getCDP();
+        const conn = await getBiDi();
         await browserPressKey(conn, args as any);
         return textResult(`Pressed key: ${args.key}`);
       } catch (e: any) {
@@ -914,7 +810,7 @@ function createHandlers(): Record<string, ToolHandler> {
 
     browser_type: async (args) => {
       try {
-        const conn = await getCDP();
+        const conn = await getBiDi();
         await browserType(conn, args as any);
         return textResult(`Typed ${(args.text as string).length} characters`);
       } catch (e: any) {
@@ -924,7 +820,7 @@ function createHandlers(): Record<string, ToolHandler> {
 
     browser_fill_form: async (args) => {
       try {
-        const conn = await getCDP();
+        const conn = await getBiDi();
         // MCP schema sends flat {ref?, selector?, value} — wrap into fields array
         const fields = [{
           name: (args.selector as string) ?? (args.ref as string) ?? "field",
@@ -942,7 +838,7 @@ function createHandlers(): Record<string, ToolHandler> {
 
     browser_hover: async (args) => {
       try {
-        const conn = await getCDP();
+        const conn = await getBiDi();
         await browserHover(conn, args as any);
         return textResult(`Hovered over element`);
       } catch (e: any) {
@@ -952,7 +848,7 @@ function createHandlers(): Record<string, ToolHandler> {
 
     browser_drag: async (args) => {
       try {
-        const conn = await getCDP();
+        const conn = await getBiDi();
         await browserDrag(conn, args as any);
         return textResult(`Dragged from ${args.startRef} to ${args.endRef}`);
       } catch (e: any) {
@@ -962,7 +858,7 @@ function createHandlers(): Record<string, ToolHandler> {
 
     browser_select_option: async (args) => {
       try {
-        const conn = await getCDP();
+        const conn = await getBiDi();
         const result = await browserSelectOption(conn, args as any);
         return textResult(`Selected: ${result.selected.join(", ")}`);
       } catch (e: any) {
@@ -972,7 +868,7 @@ function createHandlers(): Record<string, ToolHandler> {
 
     browser_handle_dialog: async (args) => {
       try {
-        const conn = await getCDP();
+        const conn = await getBiDi();
         await browserHandleDialog(conn, args as any);
         return textResult(`Dialog ${args.accept ? "accepted" : "dismissed"}`);
       } catch (e: any) {
@@ -982,7 +878,7 @@ function createHandlers(): Record<string, ToolHandler> {
 
     browser_file_upload: async (args) => {
       try {
-        const conn = await getCDP();
+        const conn = await getBiDi();
         const result = await browserFileUpload(conn, args as any);
         return textResult(`Uploaded ${result.filesCount} file(s)`);
       } catch (e: any) {
@@ -992,7 +888,7 @@ function createHandlers(): Record<string, ToolHandler> {
 
     browser_wait_for: async (args) => {
       try {
-        const conn = await getCDP();
+        const conn = await getBiDi();
         const result = await browserWaitFor(conn, args as any);
         return textResult(`Wait completed in ${result.elapsed}ms`);
       } catch (e: any) {
@@ -1002,7 +898,7 @@ function createHandlers(): Record<string, ToolHandler> {
 
     browser_resize: async (args) => {
       try {
-        const conn = await getCDP();
+        const conn = await getBiDi();
         const result = await browserResize(conn, args as any);
         return textResult(`Resized to ${result.width}x${result.height}`);
       } catch (e: any) {
@@ -1012,7 +908,7 @@ function createHandlers(): Record<string, ToolHandler> {
 
     browser_close: async (args) => {
       try {
-        const conn = await getCDP();
+        const conn = await getBiDi();
         const result = await browserClose(conn, args as any);
         return textResult(`Closed ${result.closedTargets} tab(s)`);
       } catch (e: any) {
@@ -1022,7 +918,7 @@ function createHandlers(): Record<string, ToolHandler> {
 
     browser_network_requests: async (args) => {
       try {
-        const conn = await getCDP();
+        const conn = await getBiDi();
         const result = await browserNetworkRequests(conn, args as any);
         const lines = result.requests.map(r => `${r.method} ${r.status ?? "?"} ${r.url}`);
         return textResult(lines.length ? lines.join("\n") : "No network requests captured");
@@ -1033,7 +929,7 @@ function createHandlers(): Record<string, ToolHandler> {
 
     browser_console_messages: async (args) => {
       try {
-        const conn = await getCDP();
+        const conn = await getBiDi();
         const result = await browserConsoleMessages(conn, args as any);
         const lines = result.messages.map(m => `[${m.level}] ${m.text}`);
         return textResult(lines.length ? lines.join("\n") : "No console messages");
@@ -1044,7 +940,7 @@ function createHandlers(): Record<string, ToolHandler> {
 
     browser_inspect_source: async (args) => {
       try {
-        const conn = await getCDP();
+        const conn = await getBiDi();
         const result = await browserInspectSource(conn, args as any);
         const lines: string[] = [];
         lines.push(`Element: <${result.tagName}>`);
@@ -1071,7 +967,7 @@ function createHandlers(): Record<string, ToolHandler> {
 
     browser_route: async (args) => {
       try {
-        const conn = await getCDP();
+        const conn = await getBiDi();
         const result = await browserRoute(conn, args as any);
         return textResult(`Route registered: ${result.url} → ${result.status}\nActive routes: ${result.activeRoutes}`);
       } catch (e: any) {
@@ -1081,7 +977,7 @@ function createHandlers(): Record<string, ToolHandler> {
 
     browser_abort: async (args) => {
       try {
-        const conn = await getCDP();
+        const conn = await getBiDi();
         const result = await browserAbort(conn, args as any);
         return textResult(`Abort registered: ${result.url}\nActive aborts: ${result.activeAborts}`);
       } catch (e: any) {
@@ -1091,7 +987,7 @@ function createHandlers(): Record<string, ToolHandler> {
 
     browser_unroute: async (args) => {
       try {
-        const conn = await getCDP();
+        const conn = await getBiDi();
         const result = await browserUnroute(conn, args as any);
         return textResult(`Removed ${result.removed} rule(s)\nRemaining: ${result.remaining}`);
       } catch (e: any) {
@@ -1101,7 +997,7 @@ function createHandlers(): Record<string, ToolHandler> {
 
     browser_annotated_screenshot: async (args) => {
       try {
-        const conn = await getCDP();
+        const conn = await getBiDi();
         const result = await browserAnnotatedScreenshot(conn, args as any);
         const content: any[] = [{
           type: "image",
@@ -1122,7 +1018,7 @@ function createHandlers(): Record<string, ToolHandler> {
 
     browser_diff: async (args) => {
       try {
-        const conn = await getCDP();
+        const conn = await getBiDi();
         const result = await browserDiff(conn, args as any);
         const content: any[] = [{
           type: "image",
@@ -1145,7 +1041,7 @@ function createHandlers(): Record<string, ToolHandler> {
 
     browser_find: async (args) => {
       try {
-        const conn = await getCDP();
+        const conn = await getBiDi();
         const result = await browserFind(conn, args as any);
         if (!result.found) {
           return textResult(`No match found (${result.count} candidates)`);
@@ -1163,7 +1059,7 @@ function createHandlers(): Record<string, ToolHandler> {
 
     browser_save_state: async (args) => {
       try {
-        const conn = await getCDP();
+        const conn = await getBiDi();
         const result = await browserSaveState(conn, args as any);
         return textResult(
           `State "${result.name}" saved to ${result.path}\n` +
@@ -1176,7 +1072,7 @@ function createHandlers(): Record<string, ToolHandler> {
 
     browser_load_state: async (args) => {
       try {
-        const conn = await getCDP();
+        const conn = await getBiDi();
         const result = await browserLoadState(conn, args as any);
         return textResult(
           `State "${result.name}" restored\n` +

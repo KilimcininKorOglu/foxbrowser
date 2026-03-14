@@ -12,15 +12,14 @@ import { VERSION } from "./version.js";
 import { getInstallMethod, getInstallPath, getUpgradeStatus, checkForUpgrade } from "./upgrade.js";
 
 /**
- * Attempts to find the Chrome/Chromium executable path.
+ * Attempts to find the Firefox executable path.
  * Returns the path if found, or null if not installed.
  */
-function findChromePath(): string | null {
-  // Try common which/where commands first (works across platforms, mockable in tests)
+function findFirefoxPath(): string | null {
   const whichCommands =
     process.platform === "win32"
-      ? ["where chrome", "where chromium", "where msedge"]
-      : ["which google-chrome", "which chromium", "which chromium-browser", "which chrome"];
+      ? ["where firefox"]
+      : ["which firefox", "which firefox-esr"];
 
   for (const cmd of whichCommands) {
     try {
@@ -32,12 +31,11 @@ function findChromePath(): string | null {
     }
   }
 
-  // Fallback: check well-known macOS app bundle paths via shell
   if (process.platform === "darwin") {
     const macPaths = [
-      "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-      "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
-      "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser",
+      "/Applications/Firefox.app/Contents/MacOS/firefox",
+      "/Applications/Firefox Nightly.app/Contents/MacOS/firefox",
+      "/Applications/Firefox Developer Edition.app/Contents/MacOS/firefox",
     ];
     for (const p of macPaths) {
       try {
@@ -181,36 +179,36 @@ export async function runDoctor(): Promise<DiagnosticResult[]> {
     });
   }
 
-  // 1. Check Chrome/Chromium installation
-  const chromePath = findChromePath();
+  // 1. Check Firefox installation
+  const firefoxPath = findFirefoxPath();
   checks.push({
-    ok: chromePath !== null,
-    label: "Chrome/Chromium installed",
-    message: chromePath
-      ? `Found at ${chromePath}`
-      : "Chrome or Chromium not found in PATH",
+    ok: firefoxPath !== null,
+    label: "Firefox installed",
+    message: firefoxPath
+      ? `Found at ${firefoxPath}`
+      : "Firefox not found in PATH",
   });
 
   // 2. Check Node.js version
   checks.push(checkNodeVersion());
 
-  // 3. Check CDP connectivity — auto-launch Chrome with debugging if needed
-  const { connectChrome } = await import("./chrome-launcher.js");
-  const connection = await connectChrome({ autoLaunch: !!chromePath });
+  // 3. Check BiDi connectivity — auto-launch Firefox with debugging if needed
+  const { connectFirefox } = await import("./firefox-launcher.js");
+  const connection = await connectFirefox({ autoLaunch: !!firefoxPath });
 
   if (connection.success) {
     checks.push({
       ok: true,
-      label: "CDP connection",
+      label: "BiDi connection",
       message: connection.wsEndpoint
         ? `Connected (port ${connection.port}, --remote-debugging-port)`
-        : `CDP reachable on port ${connection.port}`,
+        : `BiDi reachable on port ${connection.port}`,
     });
   } else {
     checks.push({
       ok: false,
-      label: "CDP connection",
-      message: connection.error ?? "CDP not available",
+      label: "BiDi connection",
+      message: connection.error ?? "BiDi not available",
     });
   }
 

@@ -44,7 +44,7 @@ import { browserClipboardRead, browserClipboardWrite } from "../src/tools/browse
 import { listFrames } from "../src/tools/browser-frames";
 import { browserScrollIntoView } from "../src/tools/browser-scroll-into-view";
 import { findByRole, findByText, findByLabel, findByPlaceholder, findByAlt, findByTitle, findByTestId, findFirst, findLast, findNth, browserFind } from "../src/tools/browser-find";
-import { waitForDocumentReady } from "../src/cdp/wait-ready";
+import { waitForDocumentReady } from "../src/bidi/wait-ready";
 
 // ---------------------------------------------------------------------------
 // TDD Imports — Network intercept tools (browser_route, browser_abort, browser_unroute)

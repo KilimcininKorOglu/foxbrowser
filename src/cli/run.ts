@@ -6,8 +6,8 @@
  */
 
 import pc from "picocolors";
-import { connectChrome } from "../chrome-launcher.js";
-import { CDPConnection } from "../cdp/connection.js";
+import { connectFirefox } from "../firefox-launcher.js";
+import { BiDiConnection } from "../bidi/connection.js";
 import type { CLICommand } from "./types.js";
 
 // ---------------------------------------------------------------------------
@@ -200,60 +200,22 @@ function printHelp(categories: CommandCategory[]): void {
 }
 
 // ---------------------------------------------------------------------------
-// CDP connection helper
+// BiDi connection helper
 // ---------------------------------------------------------------------------
 
-async function connectCDP(): Promise<CDPConnection> {
-  const result = await connectChrome({ autoLaunch: true });
+async function connectBiDi(): Promise<BiDiConnection> {
+  const result = await connectFirefox({ autoLaunch: true });
 
   if (!result.success) {
-    const msg = result.error ?? "Could not connect to Chrome via CDP.";
+    const msg = result.error ?? "Could not connect to Firefox via BiDi.";
     throw new Error(msg);
   }
 
-  const wsUrl = result.wsEndpoint ?? `ws://127.0.0.1:${result.port}/devtools/browser`;
-  const browser = new CDPConnection(wsUrl);
-  await browser.connect();
+  const wsUrl = result.wsEndpoint ?? `ws://127.0.0.1:${result.port}/session`;
+  const conn = new BiDiConnection(wsUrl);
+  await conn.connect();
 
-  // Find a page target and attach to it (same as MCP server)
-  const targets = await browser.send("Target.getTargets") as {
-    targetInfos: Array<{ targetId: string; type: string; url: string }>;
-  };
-
-  let page = targets.targetInfos.find(
-    (t) => t.type === "page" && !t.url.startsWith("chrome://")
-  ) ?? targets.targetInfos.find(
-    (t) => t.type === "page"
-  );
-
-  if (!page) {
-    const created = await browser.send("Target.createTarget", { url: "about:blank" }) as { targetId: string };
-    page = { targetId: created.targetId, type: "page", url: "about:blank" };
-  }
-
-  const attached = await browser.send("Target.attachToTarget", {
-    targetId: page.targetId,
-    flatten: true,
-  }) as { sessionId: string };
-
-  // Return a session-scoped proxy that sends commands with the sessionId
-  const sessionId = attached.sessionId;
-  const session = Object.create(browser) as CDPConnection;
-  const originalSend = browser.send.bind(browser);
-  session.send = (method: string, params?: Record<string, unknown>, options?: { timeout?: number; sessionId?: string }) => {
-    return originalSend(method, params, {
-      ...options,
-      sessionId: options?.sessionId ?? sessionId,
-    });
-  };
-  session.close = () => browser.close();
-
-  await Promise.all([
-    session.send("Page.enable"),
-    session.send("Runtime.enable"),
-  ]).catch(() => {});
-
-  return session;
+  return conn;
 }
 
 
@@ -300,19 +262,19 @@ export async function runCLI(args: string[]): Promise<void> {
     process.exit(1);
   }
 
-  // Connect to Chrome and run the command
-  let cdp: CDPConnection | null = null;
+  // Connect to Firefox and run the command
+  let bidi: BiDiConnection | null = null;
   try {
-    cdp = await connectCDP();
-    await command.run(cdp, remainingArgs);
+    bidi = await connectBiDi();
+    await command.run(bidi, remainingArgs);
   } catch (err) {
     const message =
       err instanceof Error ? err.message : String(err);
     console.error(pc.red(`Error: ${message}`));
     process.exit(1);
   } finally {
-    if (cdp?.isConnected) {
-      cdp.close();
+    if (bidi?.isConnected) {
+      bidi.close();
     }
   }
 }

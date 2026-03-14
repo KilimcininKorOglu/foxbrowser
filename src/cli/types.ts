@@ -1,9 +1,9 @@
-import type { CDPConnection } from "../cdp/connection.js";
+import type { BiDiConnection } from "../bidi/connection.js";
 
 export interface CLICommand {
   name: string;
   aliases?: string[];
   description: string;
   usage: string;
-  run: (cdp: CDPConnection, args: string[]) => Promise<void>;
+  run: (bidi: BiDiConnection, args: string[]) => Promise<void>;
 }

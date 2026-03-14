@@ -2614,22 +2614,18 @@ describe("Install Command (src/install.ts)", () => {
       },
     }));
 
-    // Mock chrome-launcher to prevent real Chrome interaction during install tests
-    vi.doMock("../src/chrome-launcher", () => ({
-      connectChrome: vi.fn().mockResolvedValue({ success: false, port: 9222, activePortFound: false, error: "mocked" }),
-      openChromeInspect: vi.fn().mockReturnValue(false),
-      findChrome: vi.fn().mockReturnValue(null),
+    // Mock firefox-launcher to prevent real Firefox interaction during install tests
+    vi.doMock("../src/firefox-launcher", () => ({
+      connectFirefox: vi.fn().mockResolvedValue({ success: false, port: 9222, error: "mocked" }),
+      findFirefox: vi.fn().mockReturnValue(null),
       isPortReachable: vi.fn().mockResolvedValue(false),
-      readDevToolsActivePort: vi.fn().mockReturnValue(null),
-      getDefaultChromeDataDir: vi.fn().mockReturnValue("/tmp/browsirai-test"),
+      getDefaultFirefoxDataDir: vi.fn().mockReturnValue("/tmp/browsirai-test"),
     }));
-    vi.doMock("../src/chrome-launcher.js", () => ({
-      connectChrome: vi.fn().mockResolvedValue({ success: false, port: 9222, activePortFound: false, error: "mocked" }),
-      openChromeInspect: vi.fn().mockReturnValue(false),
-      findChrome: vi.fn().mockReturnValue(null),
+    vi.doMock("../src/firefox-launcher.js", () => ({
+      connectFirefox: vi.fn().mockResolvedValue({ success: false, port: 9222, error: "mocked" }),
+      findFirefox: vi.fn().mockReturnValue(null),
       isPortReachable: vi.fn().mockResolvedValue(false),
-      readDevToolsActivePort: vi.fn().mockReturnValue(null),
-      getDefaultChromeDataDir: vi.fn().mockReturnValue("/tmp/browsirai-test"),
+      getDefaultFirefoxDataDir: vi.fn().mockReturnValue("/tmp/browsirai-test"),
     }));
 
     const mod = await import("../src/install");
@@ -2980,22 +2976,18 @@ describe("Doctor Command (src/doctor.ts)", () => {
       default: { createConnection: mockCreateConnection },
     }));
 
-    // Mock chrome-launcher to prevent real Chrome interaction during doctor tests
-    vi.doMock("../src/chrome-launcher", () => ({
-      connectChrome: vi.fn().mockResolvedValue({ success: false, port: 9222, activePortFound: false, error: "Chrome remote debugging is not enabled. Open chrome://inspect/#remote-debugging in Chrome to enable it." }),
-      openChromeInspect: vi.fn().mockReturnValue(false),
-      readDevToolsActivePort: vi.fn().mockReturnValue(null),
-      findChrome: vi.fn().mockReturnValue(null),
+    // Mock firefox-launcher to prevent real Firefox interaction during doctor tests
+    vi.doMock("../src/firefox-launcher", () => ({
+      connectFirefox: vi.fn().mockResolvedValue({ success: false, port: 9222, error: "Firefox remote debugging is not enabled." }),
+      findFirefox: vi.fn().mockReturnValue(null),
       isPortReachable: vi.fn().mockResolvedValue(false),
-      getDefaultChromeDataDir: vi.fn().mockReturnValue("/tmp/browsirai-test"),
+      getDefaultFirefoxDataDir: vi.fn().mockReturnValue("/tmp/browsirai-test"),
     }));
-    vi.doMock("../src/chrome-launcher.js", () => ({
-      connectChrome: vi.fn().mockResolvedValue({ success: false, port: 9222, activePortFound: false, error: "Chrome remote debugging is not enabled. Open chrome://inspect/#remote-debugging in Chrome to enable it." }),
-      openChromeInspect: vi.fn().mockReturnValue(false),
-      readDevToolsActivePort: vi.fn().mockReturnValue(null),
-      findChrome: vi.fn().mockReturnValue(null),
+    vi.doMock("../src/firefox-launcher.js", () => ({
+      connectFirefox: vi.fn().mockResolvedValue({ success: false, port: 9222, error: "Firefox remote debugging is not enabled." }),
+      findFirefox: vi.fn().mockReturnValue(null),
       isPortReachable: vi.fn().mockResolvedValue(false),
-      getDefaultChromeDataDir: vi.fn().mockReturnValue("/tmp/browsirai-test"),
+      getDefaultFirefoxDataDir: vi.fn().mockReturnValue("/tmp/browsirai-test"),
     }));
 
     const mod = await import("../src/doctor");
@@ -3048,12 +3040,12 @@ describe("Doctor Command (src/doctor.ts)", () => {
     it("should check CDP connection status", async () => {
       const result = await runDoctor();
 
-      // Should include a CDP connection check in results
+      // Should include a BiDi connection check in results
       expect(Array.isArray(result)).toBe(true);
-      const cdpCheck = (result as Array<{ label: string }>).find(
-        (c) => c.label.toLowerCase().includes("cdp")
+      const bidiCheck = (result as Array<{ label: string }>).find(
+        (c) => c.label.toLowerCase().includes("bidi")
       );
-      expect(cdpCheck).toBeDefined();
+      expect(bidiCheck).toBeDefined();
     });
 
     it("should detect current platform", async () => {
@@ -3135,34 +3127,28 @@ describe("Doctor Command (src/doctor.ts)", () => {
       }
     });
 
-    it("should show Chrome path when found", async () => {
-      const chromePath = "/usr/bin/google-chrome";
-      mockExecSync.mockReturnValue(Buffer.from(chromePath));
+    it("should show Firefox path when found", async () => {
+      const firefoxPath = "/usr/bin/firefox";
+      mockExecSync.mockReturnValue(Buffer.from(firefoxPath));
 
       const result = await runDoctor();
 
-      // runDoctor must return diagnostic results
       expect(result).toBeDefined();
       expect(Array.isArray(result)).toBe(true);
 
       const checks = result as Array<{ label: string; message?: string; ok: boolean }>;
-      const chromeCheck = checks.find(
-        (c) =>
-          c.label.toLowerCase().includes("chrome") ||
-          c.label.toLowerCase().includes("chromium")
+      const firefoxCheck = checks.find(
+        (c) => c.label.toLowerCase().includes("firefox")
       );
-      expect(chromeCheck).toBeDefined();
-      expect(chromeCheck!.message || chromeCheck!.label).toContain(chromePath);
+      expect(firefoxCheck).toBeDefined();
+      expect(firefoxCheck!.message || firefoxCheck!.label).toContain(firefoxPath);
     });
 
-    it('should suggest "chrome://inspect/#remote-debugging" when CDP unreachable', async () => {
-      // Make execSync throw for all calls so Chrome is NOT found
-      // This prevents auto-launch attempt
+    it("should show BiDi connection failure when port unreachable", async () => {
       mockExecSync.mockImplementation(() => {
         throw new Error("not found");
       });
 
-      // Simulate CDP port unreachable
       const mockErrorSocket = {
         on: vi.fn().mockImplementation(function (
           this: { on: ReturnType<typeof vi.fn> },
@@ -3181,20 +3167,15 @@ describe("Doctor Command (src/doctor.ts)", () => {
 
       const result = await runDoctor();
 
-      // runDoctor must return diagnostic results
       expect(result).toBeDefined();
       expect(Array.isArray(result)).toBe(true);
 
       const checks = result as Array<{ label: string; message?: string; ok: boolean }>;
-      const cdpCheck = checks.find(
-        (c) =>
-          c.label.toLowerCase().includes("cdp") ||
-          c.label.toLowerCase().includes("port")
+      const bidiCheck = checks.find(
+        (c) => c.label.toLowerCase().includes("bidi")
       );
-      expect(cdpCheck).toBeDefined();
-      expect(cdpCheck!.ok).toBe(false);
-      expect(cdpCheck!.message).toContain("chrome://inspect");
-
+      expect(bidiCheck).toBeDefined();
+      expect(bidiCheck!.ok).toBe(false);
     });
   });
 });

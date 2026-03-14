@@ -22,7 +22,7 @@ import { join } from "node:path";
 // Zod schemas
 // ---------------------------------------------------------------------------
 
-const chromeConfigSchema = z.object({
+const firefoxConfigSchema = z.object({
   port: z.number().int().min(1).max(65535).default(9222),
   host: z.string().min(1).default("127.0.0.1"),
   autoLaunch: z.boolean().default(false),
@@ -44,7 +44,7 @@ const connectionConfigSchema = z.object({
 });
 
 const browsiraiConfigSchema = z.object({
-  chrome: chromeConfigSchema.default({}),
+  firefox: firefoxConfigSchema.default({}),
   screenshot: screenshotConfigSchema.default({}),
   network: networkConfigSchema.default({}),
   connection: connectionConfigSchema.default({}),
@@ -54,7 +54,7 @@ const browsiraiConfigSchema = z.object({
 // Partial schema for user-provided config (all fields optional)
 // ---------------------------------------------------------------------------
 
-const partialChromeSchema = z.object({
+const partialFirefoxSchema = z.object({
   port: z.number().int().min(1).max(65535).optional(),
   host: z.string().min(1).optional(),
   autoLaunch: z.boolean().optional(),
@@ -76,7 +76,7 @@ const partialConnectionSchema = z.object({
 }).optional();
 
 const partialConfigSchema = z.object({
-  chrome: partialChromeSchema,
+  firefox: partialFirefoxSchema,
   screenshot: partialScreenshotSchema,
   network: partialNetworkSchema,
   connection: partialConnectionSchema,
@@ -172,19 +172,19 @@ function readConfigFile(configPath: string): Record<string, unknown> | null {
 function applyEnvOverrides(config: BrowserdConfig): BrowserdConfig {
   const result = deepMerge(config, {});
 
-  // CHROME_DEBUG_PORT -> chrome.port
-  const portStr = process.env.CHROME_DEBUG_PORT;
+  // FIREFOX_DEBUG_PORT -> firefox.port
+  const portStr = process.env.FIREFOX_DEBUG_PORT ?? process.env.CHROME_DEBUG_PORT;
   if (portStr !== undefined && portStr !== "") {
     const port = parseInt(portStr, 10);
     if (!isNaN(port)) {
-      result.chrome.port = port;
+      result.firefox.port = port;
     }
   }
 
-  // BROWSIR_HOST -> chrome.host
+  // BROWSIR_HOST -> firefox.host
   const host = process.env.BROWSIR_HOST;
   if (host !== undefined && host !== "") {
-    result.chrome.host = host;
+    result.firefox.host = host;
   }
 
   return result;

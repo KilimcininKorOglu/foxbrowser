@@ -33,7 +33,8 @@ import {
   RefSystem,
   type RefEntry,
 } from "../src/ref-system";
-import type { CDPConnection } from "../src/cdp/connection";
+import type { BiDiConnection } from "../src/bidi/connection";
+type CDPConnection = BiDiConnection;
 import { shouldShowAxNode, processAccessibilityTree } from "../src/tools/browser-snapshot";
 import {
   browserGetText,
